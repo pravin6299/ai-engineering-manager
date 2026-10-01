@@ -29,6 +29,9 @@ MANIFEST
 
 # Jupyter Notebooks checkpoint
 .ipynb_checkpoints
+# Generated frontend dependencies
+/workspace/frontend/node_modules/
+
 
 # Virtual Environments (Highly recommended to ignore)
 .env
@@ -42,6 +45,7 @@ venv.bak/
 # Environment variables and secrets (Never commit these!)
 .env
 .env.*
+!.env.example
 secrets.py
 instance/
 

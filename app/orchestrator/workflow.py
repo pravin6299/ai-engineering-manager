@@ -3,7 +3,14 @@ import logging
 from app.agents.backend import BackendDeveloperAgent
 from app.agents.frontend import FrontendDeveloperAgent
 from app.agents.manager import ManagerAgent
-from app.models.task import AgentName, AgentResult, ProjectResponse, Task, TaskStatus
+from app.models.task import (
+    AgentName,
+    AgentResult,
+    ProjectResponse,
+    Task,
+    TaskStatus,
+    TaskTestOwnership,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +27,12 @@ class Orchestrator:
             AgentName.BACKEND: backend_agent,
             AgentName.FRONTEND: frontend_agent,
         }
+        self.backend_test_ownership: dict[str, TaskTestOwnership] = {}
+        self.frontend_test_ownership: dict[str, TaskTestOwnership] = {}
 
     async def create_project(self, requirement: str) -> ProjectResponse:
+        self.backend_test_ownership = {}
+        self.frontend_test_ownership = {}
         tasks = await self.manager_agent.analyze_requirement(requirement)
         self._validate_acyclic(tasks)
         results: list[AgentResult] = []
@@ -54,29 +65,67 @@ class Orchestrator:
                     task.id,
                     task.assigned_agent.value,
                 )
-                if task.assigned_agent == AgentName.BACKEND:
-                    dependency_context = [
-                        {
-                            "task_id": dependency_id,
-                            "title": task_map[dependency_id].title,
-                            "description": task_map[dependency_id].description,
-                            "status": task_map[dependency_id].status.value,
-                            "files_created": results_by_id[dependency_id].files_created,
-                            "files_modified": results_by_id[dependency_id].files_modified,
-                        }
-                        for dependency_id in task.depends_on
-                        if dependency_id in results_by_id
-                    ]
-                    result = await self.agents[task.assigned_agent].process(
-                        task, dependency_context
-                    )
-                else:
-                    result = await self.agents[task.assigned_agent].process(task)
+                dependency_context = [
+                    {
+                        "task_id": dependency_id,
+                        "title": task_map[dependency_id].title,
+                        "description": task_map[dependency_id].description,
+                        "status": task_map[dependency_id].status.value,
+                        "provides": task_map[dependency_id].provides,
+                        "files_created": results_by_id[dependency_id].files_created,
+                        "files_modified": results_by_id[dependency_id].files_modified,
+                    }
+                    for dependency_id in task.depends_on
+                    if dependency_id in results_by_id
+                ]
+                regression_paths = (
+                    self._completed_backend_regression_paths()
+                    if task.assigned_agent == AgentName.BACKEND
+                    else self._completed_frontend_regression_paths()
+                )
+                result = await self.agents[task.assigned_agent].process(
+                    task,
+                    dependency_context,
+                    regression_paths,
+                )
                 reviewed = self.manager_agent.review_result(task, result)
                 results.append(reviewed)
                 results_by_id[task.id] = reviewed
+                if task.assigned_agent == AgentName.BACKEND:
+                    self.backend_test_ownership[task.id] = TaskTestOwnership(
+                        task_id=task.id,
+                        test_paths=reviewed.task_test_paths,
+                        completion_status=reviewed.status,
+                    )
+
+                elif task.assigned_agent == AgentName.FRONTEND:
+                    self.frontend_test_ownership[task.id] = TaskTestOwnership(
+                        task_id=task.id,
+                        test_paths=reviewed.task_test_paths,
+                        completion_status=reviewed.status,
+                    )
 
         return ProjectResponse(requirement=requirement, tasks=tasks, results=results)
+
+    def _completed_backend_regression_paths(self) -> list[str]:
+        return list(
+            dict.fromkeys(
+                path
+                for ownership in self.backend_test_ownership.values()
+                if ownership.completion_status == TaskStatus.COMPLETED
+                for path in ownership.test_paths
+            )
+        )
+
+    def _completed_frontend_regression_paths(self) -> list[str]:
+        return list(
+            dict.fromkeys(
+                path
+                for ownership in self.frontend_test_ownership.values()
+                if ownership.completion_status == TaskStatus.COMPLETED
+                for path in ownership.test_paths
+            )
+        )
 
     @staticmethod
     def _validate_acyclic(tasks: list[Task]) -> None:

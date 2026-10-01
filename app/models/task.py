@@ -1,21 +1,21 @@
-from enum import StrEnum
+from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class AgentName(StrEnum):
+class AgentName(str, Enum):
     BACKEND = "backend"
     FRONTEND = "frontend"
 
 
-class Priority(StrEnum):
+class Priority(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
 
 
-class TaskStatus(StrEnum):
+class TaskStatus(str, Enum):
     PENDING = "pending"
     ASSIGNED = "assigned"
     BLOCKED = "blocked"
@@ -23,6 +23,30 @@ class TaskStatus(StrEnum):
     REVIEW = "review"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class ExecutionStage(str, Enum):
+    GENERATION = "GENERATION"
+    FORMAT_VALIDATION = "FORMAT_VALIDATION"
+    IMPLEMENTATION_VALIDATION = "IMPLEMENTATION_VALIDATION"
+    DEPENDENCY_PREPARATION = "DEPENDENCY_PREPARATION"
+    TEST_EXECUTION = "TEST_EXECUTION"
+    CODE_REPAIR = "CODE_REPAIR"
+    MANAGER_REVIEW = "MANAGER_REVIEW"
+
+
+class FailureCategory(str, Enum):
+    CODE_FAILURE = "CODE_FAILURE"
+    IMPORT_ERROR = "IMPORT_ERROR"
+    BUILD_ERROR = "BUILD_ERROR"
+    ROUTING_ERROR = "ROUTING_ERROR"
+    API_INTEGRATION_ERROR = "API_INTEGRATION_ERROR"
+    RENDER_ERROR = "RENDER_ERROR"
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    DEPENDENCY_FAILURE = "DEPENDENCY_FAILURE"
+    ENVIRONMENT_FAILURE = "ENVIRONMENT_FAILURE"
+    TEST_FAILURE = "TEST_FAILURE"
+    UNKNOWN_FAILURE = "UNKNOWN_FAILURE"
 
 
 class ProjectRequest(BaseModel):
@@ -37,6 +61,8 @@ class Task(BaseModel):
     priority: Priority
     status: TaskStatus = TaskStatus.ASSIGNED
     depends_on: list[str] = Field(default_factory=list)
+    provides: list[str] = Field(default_factory=list)
+    requires: list[str] = Field(default_factory=list)
 
     @field_validator("depends_on")
     @classmethod
@@ -55,6 +81,11 @@ class RunEvidence(BaseModel):
     stderr: str = ""
 
 
+class FailureClassification(BaseModel):
+    category: FailureCategory
+    reason: str
+
+
 class GeneratedFile(BaseModel):
     path: str = Field(..., min_length=1)
     content: str
@@ -63,6 +94,74 @@ class GeneratedFile(BaseModel):
 class BackendImplementation(BaseModel):
     files: list[GeneratedFile] = Field(..., min_length=1)
     task_test_paths: list[str] = Field(default_factory=list)
+
+
+class RepairFailureCategory(str, Enum):
+    ORM_CONFIGURATION = "ORM_CONFIGURATION"
+    IMPORT_ERROR = "IMPORT_ERROR"
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    ROUTING_ERROR = "ROUTING_ERROR"
+    AUTHENTICATION_ERROR = "AUTHENTICATION_ERROR"
+    DATABASE_ERROR = "DATABASE_ERROR"
+    RUNTIME_ERROR = "RUNTIME_ERROR"
+    ASSERTION_FAILURE = "ASSERTION_FAILURE"
+    BUILD_ERROR = "BUILD_ERROR"
+    API_INTEGRATION_ERROR = "API_INTEGRATION_ERROR"
+    RENDER_ERROR = "RENDER_ERROR"
+    UNKNOWN = "UNKNOWN"
+
+
+class FrontendImplementation(BaseModel):
+    summary: str = Field(..., min_length=1)
+    files: list[GeneratedFile] = Field(..., min_length=1)
+    dependencies: list[str] = Field(default_factory=list)
+    task_test_paths: list[str] = Field(default_factory=list)
+
+class FrontendImplementationPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(..., min_length=1)
+    files_to_create: list[str] = Field(default_factory=list)
+    files_to_modify: list[str] = Field(default_factory=list)
+    dependencies: list[str] = Field(default_factory=list)
+    task_test_paths: list[str] = Field(default_factory=list)
+
+
+class FrontendGeneratedFile(GeneratedFile):
+    model_config = ConfigDict(extra="forbid")
+
+
+
+class FrontendRepair(BaseModel):
+    failure_category: RepairFailureCategory
+    root_cause: str = Field(..., min_length=1)
+    files_to_modify: list[str] = Field(..., min_length=1)
+    repair_strategy: str = Field(..., min_length=1)
+    files: list[GeneratedFile] = Field(..., min_length=1)
+    task_test_paths: list[str] = Field(default_factory=list)
+    test_change_justification: str | None = None
+
+
+class BackendRepair(BaseModel):
+    failure_category: RepairFailureCategory
+    root_cause: str = Field(..., min_length=1)
+    files_to_modify: list[str] = Field(..., min_length=1)
+    repair_strategy: str = Field(..., min_length=1)
+    files: list[GeneratedFile] = Field(..., min_length=1)
+    task_test_paths: list[str] = Field(default_factory=list)
+    test_change_justification: str | None = None
+
+
+class RepairAttemptEvidence(BaseModel):
+    repair_attempt: int = Field(..., ge=1, le=3)
+    failure_category: RepairFailureCategory
+    root_cause: str
+    repair_strategy: str
+    files_modified: list[str] = Field(default_factory=list)
+    test_result_before: str
+    test_result_after: str | None = None
+    failure_signature_before: str
+    failure_signature_after: str | None = None
 
 
 class DependencyEvidence(BaseModel):
@@ -77,6 +176,32 @@ class DependencyEvidence(BaseModel):
     python_executable: str | None = None
 
 
+class TaskTestOwnership(BaseModel):
+    task_id: str = Field(..., pattern=r"^TASK-\d{3}$")
+    test_paths: list[str] = Field(default_factory=list)
+    completion_status: TaskStatus
+
+
+class AcceptanceResult(BaseModel):
+    criterion: str
+    required: bool = True
+    applicable: bool = True
+    satisfied: bool
+    evidence: list[str] = Field(default_factory=list)
+
+
+class CompletionGateResult(BaseModel):
+    implementation_evidence: bool
+    task_specific_changes: bool
+    task_tests: bool
+    regression_tests: bool
+    dependencies: bool
+    acceptance_criteria: bool
+    no_unresolved_failure: bool
+    passed: bool
+    rejection_reason: str | None = None
+
+
 class AgentResult(BaseModel):
     task_id: str
     agent: AgentName
@@ -88,12 +213,24 @@ class AgentResult(BaseModel):
     files_created: list[str] = Field(default_factory=list)
     files_modified: list[str] = Field(default_factory=list)
     acceptance_criteria: list[str] = Field(default_factory=list)
+    acceptance_results: list[AcceptanceResult] = Field(default_factory=list)
     acceptance_criteria_satisfied: bool = False
+    completion_gate: CompletionGateResult | None = None
+    rejection_reason: str | None = None
     task_test_paths: list[str] = Field(default_factory=list)
+    regression_test_paths: list[str] = Field(default_factory=list)
     task_tests: RunEvidence | None = None
     tests: RunEvidence | None = None
     dependencies: DependencyEvidence | None = None
+    generation_attempts: int = Field(default=1, ge=1)
+    format_correction_attempts: int = Field(default=0, ge=0)
+    generation_correction_attempts: int = Field(default=0, ge=0)
+    provider_fallback_count: int = Field(default=0, ge=0)
+    code_repair_attempts: int = Field(default=0, ge=0, le=3)
     attempts: int = Field(default=0, ge=0, le=3)
+    execution_stage: ExecutionStage = ExecutionStage.GENERATION
+    failure_stage: ExecutionStage | None = None
+    repair_history: list[RepairAttemptEvidence] = Field(default_factory=list)
 
 
 class ProjectResponse(BaseModel):
