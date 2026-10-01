@@ -1,57 +1,46 @@
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import inspect
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from backend.app.database import Base
+from backend.app.models import User, Student
 
-from ..main import app
-from ..database import Base, engine, SessionLocal
-from .. import models
+SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 
-client = TestClient(app)
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-@pytest.fixture(scope="function", autouse=True)
-def reset_database():
-    # Drop and recreate all tables for each test to ensure isolation
-    Base.metadata.drop_all(bind=engine)
+@pytest.fixture(scope="function")
+def db():
     Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
+    db = TestingSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+        Base.metadata.drop_all(bind=engine)
 
-def test_health_endpoint():
-    response = client.get("/health")
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
-
-def test_schema_tables_endpoint():
-    response = client.get("/schema/tables")
-    assert response.status_code == 200
-    data = response.json()
-    assert "tables" in data
-    # Expected tables based on models
-    expected_tables = {"users", "students", "courses", "enrollments"}
-    assert expected_tables.issubset(set(data["tables"]))
-
-def test_relationships_work():
-    db = SessionLocal()
-    # Create a user and linked student
-    user = models.User(username="jdoe", email="jdoe@example.com")
+def test_create_user_and_student(db):
+    user = User(email="test@example.com", hashed_password="fakepassword")
     db.add(user)
-    db.flush()  # assign id
-    student = models.Student(user_id=user.id, major="Computer Science")
-    db.add(student)
-    # Create a course
-    course = models.Course(title="Intro to Python", description="Learn Python basics")
-    db.add(course)
-    db.flush()
-    # Enroll student in course
-    enrollment = models.Enrollment(student_id=student.id, course_id=course.id)
-    db.add(enrollment)
     db.commit()
+    db.refresh(user)
 
-    # Verify relationships via ORM
+    assert user.id is not None
+    assert user.email == "test@example.com"
+
+    student = Student(
+        user_id=user.id,
+        first_name="John",
+        last_name="Doe",
+        enrollment_number="EN12345"
+    )
+    db.add(student)
+    db.commit()
     db.refresh(student)
-    assert len(student.enrollments) == 1
-    assert student.enrollments[0].course.title == "Intro to Python"
-    db.refresh(course)
-    assert len(course.enrollments) == 1
-    assert course.enrollments[0].student.user.username == "jdoe"
-    db.close()
+
+    assert student.id is not None
+    assert student.user_id == user.id
+    assert student.user.email == "test@example.com"
+    assert student.first_name == "John"

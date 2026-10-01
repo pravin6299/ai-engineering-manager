@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from backend.app.database import get_db
 from backend.app.models import User
-from backend.app.schemas import UserCreate, UserResponse, Token, LoginRequest
-from backend.app.auth import get_password_hash, verify_password, create_access_token, get_current_user
+from backend.app.schemas import UserCreate, UserResponse, Token, LoginRequest, TokenRefreshRequest
+from backend.app.auth import get_password_hash, verify_password, create_access_token, get_current_user, require_role
+from jose import jwt, JWTError
+from backend.app.auth import SECRET_KEY, ALGORITHM
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -16,7 +18,8 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
     user = User(
         email=user_in.email,
         hashed_password=hashed_password,
-        role=user_in.role
+        role=user_in.role or "student",
+        is_active=user_in.is_active if user_in.is_active is not None else True
     )
     db.add(user)
     db.commit()
@@ -32,6 +35,32 @@ def login(login_in: LoginRequest, db: Session = Depends(get_db)):
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    access_token = create_access_token(data={"sub": user.email, "role": user.role})
+    refresh_token = create_access_token(data={"sub": user.email, "role": user.role}, expires_delta=None)
+    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+
+@router.post("/logout")
+def logout():
+    return {"message": "Successfully logged out"}
+
+@router.post("/refresh", response_model=Token)
+def refresh_token(token_in: TokenRefreshRequest, db: Session = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token_in.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        role: str = payload.get("role", "student")
+        if email is None:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        raise credentials_exception
     access_token = create_access_token(data={"sub": user.email, "role": user.role})
     return {"access_token": access_token, "token_type": "bearer"}
 
