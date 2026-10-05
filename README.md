@@ -141,6 +141,42 @@ Generated projects are written below `workspace/backend/` and
 `workspace/frontend/`. Frontend execution requires Node.js and npm; package
 installation is restricted to the built-in allowlist and disables install scripts.
 
+## Controlled File-Writing API
+
+Set `N8N_TOOL_API_KEY` to a strong random secret in the root `.env`, then restart
+the API. Send the same secret from n8n in the `X-Tool-API-Key` header. Missing or
+incorrect keys receive HTTP 401; the key is never logged or returned. Swagger's
+`Try it out` form exposes this header as `x-tool-api-key`.
+
+`POST /tools/write-files` accepts only `agent: "backend"` and relative paths below
+`workspace/backend/` (for example, `backend/app/main.py`). It checks all paths
+before writing, rejects unsafe paths with structured evidence, and creates safe
+parent directories as needed. It does not execute files, install packages, or
+run tests. Keep this endpoint on a trusted network; the token grants write access
+to generated backend files. The request and response schemas are available at
+`/docs` and `/openapi.json`.
+
+```bash
+curl -X POST http://127.0.0.1:8000/tools/write-files \
+  -H "X-Tool-API-Key: ${N8N_TOOL_API_KEY}" \
+  -H 'Content-Type: application/json' \
+  -d '{"task_id":"TASK-002","agent":"backend","files":[{"path":"backend/app/main.py","content":"from fastapi import FastAPI\napp = FastAPI()\n"}]}'
+```
+
+`POST /tools/run-tests` uses the same `X-Tool-API-Key` header. It accepts only a
+task ID and `agent: "backend"`; clients cannot select paths, interpreters, or
+commands. The endpoint runs the complete `workspace/backend/tests` suite through
+the controlled `BackendTestRunner`, using `workspace/backend/.venv/bin/python`
+when present (otherwise the manager's Python). It does not install dependencies
+or repair generated code. Pytest failures and timeouts return structured evidence.
+
+```bash
+curl -X POST http://127.0.0.1:8000/tools/run-tests \
+  -H "X-Tool-API-Key: ${N8N_TOOL_API_KEY}" \
+  -H 'Content-Type: application/json' \
+  -d '{"task_id":"TASK-002","agent":"backend"}'
+```
+
 ## Run Locally
 
 Python 3.11 or newer is required.

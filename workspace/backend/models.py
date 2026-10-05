@@ -1,49 +1,50 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Table, Boolean, DateTime, func
+'''SQLAlchemy ORM models for the school management system.
+
+This file defines the `User` and `Student` models that map to the
+corresponding tables created by the migration script.
+''' 
+
+from datetime import datetime
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum
 from sqlalchemy.orm import relationship, declarative_base
+import enum
 
 Base = declarative_base()
 
-# Association table for many-to-many relationship between students and courses (enrollments)
-enrollment_table = Table(
-    "enrollments",
-    Base.metadata,
-    Column("student_id", Integer, ForeignKey("students.id"), primary_key=True),
-    Column("course_id", Integer, ForeignKey("courses.id"), primary_key=True),
-    Column("enrolled_at", DateTime(timezone=True), server_default=func.now()),
-)
+
+class UserRole(str, enum.Enum):
+    ADMIN = "admin"
+    TEACHER = "teacher"
+    STUDENT = "student"
+    STAFF = "staff"
+
 
 class User(Base):
     __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, nullable=False, index=True)
-    hashed_password = Column(String, nullable=False)
-    is_active = Column(Boolean, default=True)
-    is_superuser = Column(Boolean, default=False)
-    # Relationship to Student (one-to-one optional)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(Enum(UserRole), nullable=False)
+
+    # One‑to‑one relationship with Student (if role == student)
     student = relationship("Student", back_populates="user", uselist=False)
+
+    def __repr__(self) -> str:
+        return f"<User id={self.id} email={self.email} role={self.role}>"
+
 
 class Student(Base):
     __tablename__ = "students"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), unique=True)
-    full_name = Column(String, nullable=False)
-    # Relationship back to User
-    user = relationship("User", back_populates="student")
-    # Enrolled courses via association table
-    courses = relationship(
-        "Course",
-        secondary=enrollment_table,
-        back_populates="students",
-    )
 
-class Course(Base):
-    __tablename__ = "courses"
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, nullable=False)
-    description = Column(String, nullable=True)
-    # Enrolled students via association table
-    students = relationship(
-        "Student",
-        secondary=enrollment_table,
-        back_populates="courses",
-    )
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    name = Column(String(255), nullable=False)
+    class_name = Column(String(50), nullable=False)  # e.g., "10A"
+    enrollment_date = Column(DateTime, default=datetime.utcnow, nullable=False)
+    # Additional optional fields can be added later (e.g., date_of_birth)
+
+    user = relationship("User", back_populates="student")
+
+    def __repr__(self) -> str:
+        return f"<Student id={self.id} name={self.name} class={self.class_name}>"

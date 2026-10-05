@@ -1,91 +1,94 @@
+'''backend/tests/test_student_dashboard.py
+
+Integration tests for the ``GET /api/student/dashboard`` endpoint.
+The tests verify:
+* 200 response with correctly shaped data for an authenticated student.
+* 401 when no token is supplied.
+* 403 when the token belongs to a user without the ``student`` role.
+
+The FastAPI ``TestClient`` (via ``httpx.AsyncClient``) is used together
+with ``dependency_overrides`` to inject a mock ``User`` object without
+having to generate real JWTs.
+''' 
+
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from fastapi import FastAPI
+from httpx import AsyncClient
+from backend.main import app
+from backend.dependencies.auth import User
 
-from backend.app.main import app
-from backend.app.database import Base, get_db
-from backend.app.models import User, StudentProfile, Grade, Attendance, Course
-from backend.app.auth import get_password_hash
+# ---------------------------------------------------------------------------
+# Helper – overrides the authentication dependency for the duration of a test.
+# ---------------------------------------------------------------------------
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test_student_dashboard.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+def override_get_current_user(user: User):
+    async def _override():
+        return user
+    return _override
 
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
-app.dependency_overrides[get_db] = override_get_db
+@pytest.fixture
+def anyio_backend():
+    # Required by pytest‑asyncio for async tests.
+    return "asyncio"
 
-@pytest.fixture(autouse=True)
-def setup_db():
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    db = TestingSessionLocal()
-    
-    # Create student user & profile
-    student_user = User(email="student@school.com", hashed_password=get_password_hash("password123"), role="student")
-    db.add(student_user)
-    db.commit()
-    db.refresh(student_user)
 
-    profile = StudentProfile(user_id=student_user.id, first_name="Alice", last_name="Smith", enrollment_number="STU001", grade_level="10")
-    db.add(profile)
-    db.commit()
-    db.refresh(profile)
+@pytest.mark.anyio
+async def test_dashboard_success():
+    # Mock a student user.
+    mock_user = User(
+        id=1,
+        email="student@example.com",
+        full_name="Student One",
+        roles=["student"],
+    )
+    app.dependency_overrides["backend.dependencies.auth.get_current_user"] = (
+        override_get_current_user(mock_user)
+    )
 
-    course = Course(title="Mathematics", code="MATH101", description="Algebra & Geometry")
-    db.add(course)
-    db.commit()
-    db.refresh(course)
+    async with AsyncClient(app=app, base_url="http://testserver") as client:
+        response = await client.get("/api/student/dashboard")
+        assert response.status_code == 200
+        data = response.json()
+        # Verify top‑level keys.
+        assert "profile" in data
+        assert "academic_records" in data
+        # Verify profile fields.
+        profile = data["profile"]
+        assert profile["student_id"] == mock_user.id
+        assert profile["full_name"] == mock_user.full_name
+        assert profile["email"] == mock_user.email
+        # Verify at least one academic record exists.
+        assert isinstance(data["academic_records"], list)
+        assert len(data["academic_records"]) > 0
 
-    grade = Grade(student_id=profile.id, course_id=course.id, score=95.0, max_score=100.0, letter_grade="A", term="Fall")
-    attendance = Attendance(student_id=profile.id, status="Present", course_name="Mathematics")
-    db.add(grade)
-    db.add(attendance)
-    db.commit()
-    db.close()
-    yield
-    Base.metadata.drop_all(bind=engine)
+    # Clean up overrides.
+    app.dependency_overrides.clear()
 
-client = TestClient(app)
 
-def test_get_student_dashboard_success():
-    # Login as student
-    response = client.post("/api/auth/login", json={"email": "student@school.com", "password": "password123"})
-    assert response.status_code == 200
-    token = response.json()["access_token"]
+@pytest.mark.anyio
+async def test_dashboard_unauthenticated():
+    # No override – the real dependency will raise 401 because no header.
+    async with AsyncClient(app=app, base_url="http://testserver") as client:
+        response = await client.get("/api/student/dashboard")
+        assert response.status_code == 401
 
-    headers = {"Authorization": f"Bearer {token}"}
-    dash_response = client.get("/api/students/dashboard", headers=headers)
-    assert dash_response.status_code == 200
-    data = dash_response.json()
-    assert data["profile"]["first_name"] == "Alice"
-    assert len(data["grades"]) == 1
-    assert data["grades"][0]["score"] == 95.0
-    assert len(data["attendance"]) == 1
-    assert data["attendance"][0]["status"] == "Present"
 
-def test_get_student_grades():
-    response = client.post("/api/auth/login", json={"email": "student@school.com", "password": "password123"})
-    token = response.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    grades_response = client.get("/api/students/grades", headers=headers)
-    assert grades_response.status_code == 200
-    assert len(grades_response.json()) == 1
-    assert grades_response.json()[0]["letter_grade"] == "A"
+@pytest.mark.anyio
+async def test_dashboard_forbidden_role():
+    # Mock a user that lacks the student role.
+    mock_user = User(
+        id=2,
+        email="teacher@example.com",
+        full_name="Teacher Two",
+        roles=["teacher"],
+    )
+    app.dependency_overrides["backend.dependencies.auth.get_current_user"] = (
+        override_get_current_user(mock_user)
+    )
 
-def test_get_student_attendance():
-    response = client.post("/api/auth/login", json={"email": "student@school.com", "password": "password123"})
-    token = response.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-    
-    att_response = client.get("/api/students/attendance", headers=headers)
-    assert att_response.status_code == 200
-    assert len(att_response.json()) == 1
-    assert att_response.json()[0]["status"] == "Present"
+    async with AsyncClient(app=app, base_url="http://testserver") as client:
+        response = await client.get("/api/student/dashboard")
+        assert response.status_code == 403
+
+    app.dependency_overrides.clear()
