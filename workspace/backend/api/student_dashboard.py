@@ -1,72 +1,88 @@
-'''backend/api/student_dashboard.py
-
-FastAPI router that provides the **Student Dashboard** endpoint.
-The endpoint is protected by JWT authentication and enforces that the
-authenticated user has the ``student`` role.  It returns a JSON payload
-containing the student's profile information and a list of academic
-records (courses and grades).
-
-The implementation is deliberately lightweight – it delegates the
-actual data‑retrieval to a service layer (``dashboard_service``) so that
-business logic can be unit‑tested independently of the HTTP layer.
-''' 
-
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from typing import List
 
-# Import the authentication dependency – assumed to exist in the project
-# and to raise 401 if the token is missing/invalid.
-from backend.dependencies.auth import get_current_user, User
+from backend import models
+from backend.database import get_db
+from backend.auth import get_current_user  # assumes existing JWT auth dependency
+from pydantic import BaseModel
 
-# Service that fetches the dashboard data from the database or other sources.
-from backend.services.dashboard_service import get_student_dashboard
-
-router = APIRouter(prefix="/api/student", tags=["Student Dashboard"])
+router = APIRouter(prefix="/api/student", tags=["student"])
 
 
-class CourseRecord(BaseModel):
-    course_id: str
-    course_name: str
-    grade: str
+class ClassInfo(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        orm_mode = True
+
+
+class GradeInfo(BaseModel):
+    class_id: int
+    grade: float
+
+    class Config:
+        orm_mode = True
 
 
 class StudentProfile(BaseModel):
-    student_id: int
-    full_name: str
+    id: int
     email: str
+    full_name: str
+
+    class Config:
+        orm_mode = True
 
 
-class DashboardResponse(BaseModel):
-    profile: StudentProfile
-    academic_records: List[CourseRecord]
+class StudentDashboardResponse(BaseModel):
+    student: StudentProfile
+    classes: List[ClassInfo]
+    grades: List[GradeInfo]
+
+    class Config:
+        orm_mode = True
 
 
-def _ensure_student_role(user: User):
-    """Utility that checks the user has the *student* role.
-
-    Raises:
-        HTTPException: 403 if the role is missing.
-    """
-    if "student" not in user.roles:
+@router.get("/dashboard", response_model=StudentDashboardResponse)
+def get_student_dashboard(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Ensure the user is a student (optional, based on role field)
+    if getattr(current_user, "role", "student") != "student":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="User does not have the required 'student' role",
+            detail="Access forbidden: not a student",
         )
-    return user
 
+    # Student profile
+    student_profile = StudentProfile(
+        id=current_user.id,
+        email=current_user.email,
+        full_name=getattr(current_user, "full_name", ""),
+    )
 
-@router.get("/dashboard", response_model=DashboardResponse)
-async def get_dashboard(
-    current_user: User = Depends(_ensure_student_role),
-):
-    """Return the authenticated student's dashboard data.
+    # Enrolled classes
+    classes = (
+        db.query(models.Class)
+        .join(models.Enrollment, models.Class.id == models.Enrollment.class_id)
+        .filter(models.Enrollment.student_id == current_user.id)
+        .all()
+    )
+    class_list = [ClassInfo.from_orm(cls) for cls in classes]
 
-    The endpoint:
-    * validates the JWT via ``get_current_user`` (handled by the dependency).
-    * ensures the user possesses the ``student`` role.
-    * fetches the dashboard payload from the service layer.
-    """
-    # ``current_user`` is already the validated User instance.
-    dashboard_data = await get_student_dashboard(current_user.id)
-    return dashboard_data
+    # Grades
+    grades_query = (
+        db.query(models.Grade, models.Enrollment.class_id)
+        .join(models.Enrollment, models.Grade.enrollment_id == models.Enrollment.id)
+        .filter(models.Enrollment.student_id == current_user.id)
+        .all()
+    )
+    grade_list = [GradeInfo(class_id=cls_id, grade=grade.value) for grade, cls_id in grades_query]
+
+    return StudentDashboardResponse(
+        student=student_profile,
+        classes=class_list,
+        grades=grade_list,
+    )

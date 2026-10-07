@@ -91,21 +91,21 @@ def _valid_tool_api_key(provided_key: str | None) -> bool:
     )
 
 
-def _validate_backend_write_path(path: str) -> None:
+def _validate_write_path(path: str, agent: str) -> None:
     parts = path.split("/")
     if (
         len(parts) < 2
-        or parts[0] != "backend"
+        or parts[0] != agent
         or "\\" in path
         or any(part in {"", ".", ".."} or part.startswith(".") for part in parts)
         or any(part in {"node_modules", "__pycache__", "venv", "env"} for part in parts)
     ):
-        raise WorkspacePathError("Path must be a regular file under backend/")
+        raise WorkspacePathError(f"Path must be a regular file under {agent}/")
     resolved = workspace_tool._resolve(path)
     try:
-        resolved.relative_to(workspace_tool.root / "backend")
+        resolved.relative_to(workspace_tool.root / agent)
     except ValueError as exc:
-        raise WorkspacePathError("Path escapes backend workspace") from exc
+        raise WorkspacePathError("Path escapes agent workspace") from exc
     if resolved.is_dir():
         raise WorkspacePathError("Path refers to a directory")
 
@@ -122,9 +122,9 @@ def _validate_backend_write_path(path: str) -> None:
 async def write_files(request: WriteFilesRequest, x_tool_api_key: str | None = Header(default=None)):
     if not _valid_tool_api_key(x_tool_api_key):
         return _write_files_error(request.task_id, 401, "Unauthorized")
-    if request.agent != "backend":
+    if request.agent not in {"backend", "frontend"}:
         return _write_files_error(
-            request.task_id, 400, "Only the backend agent is supported",
+            request.task_id, 400, "Only backend and frontend agents are supported",
             [file.path for file in request.files],
         )
 
@@ -132,7 +132,7 @@ async def write_files(request: WriteFilesRequest, x_tool_api_key: str | None = H
     seen: set[str] = set()
     for file in request.files:
         try:
-            _validate_backend_write_path(file.path)
+            _validate_write_path(file.path, request.agent)
             if file.path in seen:
                 raise WorkspacePathError("Duplicate file path")
             seen.add(file.path)
@@ -144,7 +144,7 @@ async def write_files(request: WriteFilesRequest, x_tool_api_key: str | None = H
     written: list[str] = []
     for file in request.files:
         try:
-            _validate_backend_write_path(file.path)
+            _validate_write_path(file.path, request.agent)
             workspace_tool.write_file(file.path, file.content)
         except (WorkspacePathError, OSError):
             evidence = WriteFilesResponse(

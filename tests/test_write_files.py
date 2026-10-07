@@ -50,6 +50,53 @@ def test_multiple_nested_files(api):
         assert (api[1] / file["path"]).read_text() == file["content"]
 
 
+def test_frontend_file_uses_single_frontend_prefix(api):
+    response = post(
+        api,
+        [{"path": "frontend/src/App.jsx", "content": "export default function App() {}\n"}],
+        agent="frontend",
+    )
+    assert response[0] == 200
+    assert response[1]["files_written"] == ["frontend/src/App.jsx"]
+    assert (api[1] / "frontend/src/App.jsx").is_file()
+    assert not (api[1] / "frontend/frontend/src/App.jsx").exists()
+
+
+@pytest.mark.parametrize("agent,path", [
+    ("backend", "frontend/src/App.jsx"),
+    ("frontend", "backend/app/main.py"),
+    ("frontend", "frontend/../backend/app/main.py"),
+    ("frontend", "../frontend/src/App.jsx"),
+    ("frontend", "/tmp/App.jsx"),
+    ("frontend", "app/orchestrator/workflow.py"),
+    ("frontend", "frontend/src/../../app/main.py"),
+])
+def test_agent_cannot_write_outside_its_directory(api, agent, path):
+    response = post(api, [{"path": path, "content": "bad"}], agent=agent)
+    assert response[0] == 400
+    assert response[1]["files_rejected"] == [path]
+    assert response[1]["files_written"] == []
+
+
+def test_frontend_rejects_symlink_into_backend(api):
+    workspace = api[1]
+    (workspace / "frontend").mkdir()
+    (workspace / "backend").mkdir()
+    (workspace / "frontend/src").symlink_to(workspace / "backend", target_is_directory=True)
+    response = post(api, [{"path": "frontend/src/main.jsx", "content": "bad"}], agent="frontend")
+    assert response[0] == 400
+    assert not (workspace / "backend/main.jsx").exists()
+
+
+def test_frontend_mixed_batch_writes_nothing(api):
+    response = post(api, [
+        {"path": "frontend/src/App.jsx", "content": "ok"},
+        {"path": "backend/app/main.py", "content": "bad"},
+    ], agent="frontend")
+    assert response[0] == 400
+    assert not (api[1] / "frontend/src/App.jsx").exists()
+
+
 @pytest.mark.parametrize("path", [
     "backend/../frontend/app.py", "../backend/app.py", "/tmp/unsafe.py",
     "frontend/app/main.py", "app/main.py", "", "backend/", "backend//app.py",
@@ -87,7 +134,7 @@ def test_manager_source_not_writable(api):
     assert not (api[1] / "app/agents/manager.py").exists()
 
 
-def test_backend_agent_only(api):
+def test_frontend_cannot_write_backend_file(api):
     response = post(api, [{"path": "backend/app/main.py", "content": "bad"}], agent="frontend")
     assert response[0] == 400
     assert not (api[1] / "backend/app/main.py").exists()

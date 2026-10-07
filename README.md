@@ -148,8 +148,9 @@ the API. Send the same secret from n8n in the `X-Tool-API-Key` header. Missing o
 incorrect keys receive HTTP 401; the key is never logged or returned. Swagger's
 `Try it out` form exposes this header as `x-tool-api-key`.
 
-`POST /tools/write-files` accepts only `agent: "backend"` and relative paths below
-`workspace/backend/` (for example, `backend/app/main.py`). It checks all paths
+`POST /tools/write-files` accepts `agent: "backend"` for paths below
+`workspace/backend/` and `agent: "frontend"` for paths below
+`workspace/frontend/` (for example, `frontend/src/App.jsx`). It checks all paths
 before writing, rejects unsafe paths with structured evidence, and creates safe
 parent directories as needed. It does not execute files, install packages, or
 run tests. Keep this endpoint on a trusted network; the token grants write access
