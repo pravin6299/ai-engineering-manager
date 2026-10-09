@@ -1,0 +1,1126 @@
+{
+  "name": "AI Engineering - Manager Agent",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1024,
+        -1008
+      ],
+      "id": "24ea2083-3aa1-4b94-aef8-88a1ff9e3464",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "038eea25-e71f-474f-b319-1854bbd99d8c",
+              "name": "project_id",
+              "value": "PRJ-001",
+              "type": "string"
+            },
+            {
+              "id": "6352941b-e299-4ab9-81c9-e0c4dba3b6da",
+              "name": "requirement",
+              "value": "Build a school management system with authentication and student dashboard",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -624,
+        -992
+      ],
+      "id": "41a0bec0-0808-4eba-b07c-2d297046f611",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are the Manager Agent of a multi-agent software development team.\n\nYour job is to analyze a software requirement and divide it into small tasks.\n\nAvailable agents:\n- backend\n- frontend\n\nDo NOT write application code.\n\nFor every task provide:\n- task_id\n- title\n- description\n- assigned_agent\n- priority\n- depends_on\n- acceptance_criteria\n\nRules:\n1. Backend/API/database work goes to backend.\n2. UI/frontend work goes to frontend.\n3. Identify dependencies correctly.\n4. Frontend tasks requiring an API must depend on the relevant backend task.\n5. Use task IDs like TASK-001, TASK-002.\n6. Return the result as JSON only.\n\nProject ID:\n{{ $json.project_id }}\n\nRequirement:\n{{ $json.requirement }}",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -496,
+        -1264
+      ],
+      "id": "0ba1150b-6e3e-4582-afc2-15a585d07c47",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        -416,
+        -768
+      ],
+      "id": "a1fa8462-424f-4c76-886c-39994e9d1836",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "dXArA5LBq4mIBunU",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"project_id\": \"PRJ-001\",\n  \"tasks\": [\n    {\n      \"task_id\": \"TASK-001\",\n      \"title\": \"Authentication Backend\",\n      \"description\": \"Implement authentication APIs\",\n      \"assigned_agent\": \"backend\",\n      \"priority\": \"High\",\n      \"depends_on\": [],\n      \"acceptance_criteria\": [\n        \"User registration works\",\n        \"User login works\"\n      ]\n    }\n  ]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -160,
+        -784
+      ],
+      "id": "44a6c07a-d75e-4c2e-b52e-1af9965f4ea3",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "output.tasks",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -256,
+        -1472
+      ],
+      "id": "eba7e61d-f120-4fc6-bb89-90a59011ddcb",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.assigned_agent }}",
+                    "rightValue": "=backend",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "de1c0510-874c-419f-91ca-b4b9f0e9bd5a"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "000ba9a0-0c77-4334-8939-39d6a4ccbf16",
+                    "leftValue": "={{ $json.assigned_agent }}",
+                    "rightValue": "frontend",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -80,
+        -1232
+      ],
+      "id": "b45646ff-9584-486c-9e43-8a3db5b79b0c",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        768,
+        -1168
+      ],
+      "id": "ffb41733-fa2b-43fa-8ffc-7c993919970b",
+      "name": "Groq Chat Model1",
+      "credentials": {
+        "groqApi": {
+          "id": "QOVuIyr8rHhudf92",
+          "name": "Groq account pravin 749"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/tools/write-files",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Tool-API-Key",
+              "value": "d751ddbed34aaee02f7647c6a1ca168736ffe5f44b5589542dce5542a262e0d6"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  task_id: $json.task_id,\n  agent: $json.agent,\n  files: $json.files\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1520,
+        -1424
+      ],
+      "id": "1c91f9e8-d01b-4d0b-9dc6-a7334c8e62f1",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction extractString(text, key) {\n  const regex = new RegExp(`\"${key}\"\\\\s*:\\\\s*\"([^\"]*)\"`);\n  const match = text.match(regex);\n  return match ? match[1] : null;\n}\n\nfunction extractArray(text, key) {\n  const marker = `\"${key}\"`;\n  const keyPos = text.indexOf(marker);\n\n  if (keyPos === -1) {\n    return [];\n  }\n\n  const colonPos = text.indexOf(':', keyPos + marker.length);\n  const start = text.indexOf('[', colonPos);\n\n  if (start === -1) {\n    throw new Error(`${key} array start not found`);\n  }\n\n  let depth = 0;\n  let inString = false;\n  let escaped = false;\n\n  for (let i = start; i < text.length; i++) {\n    const ch = text[i];\n\n    if (inString) {\n      if (escaped) {\n        escaped = false;\n      } else if (ch === '\\\\') {\n        escaped = true;\n      } else if (ch === '\"') {\n        inString = false;\n      }\n\n      continue;\n    }\n\n    if (ch === '\"') {\n      inString = true;\n      continue;\n    }\n\n    if (ch === '[') {\n      depth++;\n    } else if (ch === ']') {\n      depth--;\n\n      if (depth === 0) {\n        const arrayText = text.substring(start, i + 1);\n        return JSON.parse(arrayText);\n      }\n    }\n  }\n\n  throw new Error(`${key} array is incomplete`);\n}\n\nreturn items.map((item, index) => {\n  try {\n    let output = String(item.json.output || '').trim();\n\n    output = output\n      .replace(/^```json\\s*/i, '')\n      .replace(/^```\\s*/, '')\n      .replace(/\\s*```$/, '');\n\n    // First try normal JSON\n    try {\n      const data = JSON.parse(output);\n\n      return {\n        json: {\n          task_id: data.task_id,\n          agent: data.agent || 'backend',\n          files: data.files || [],\n          dependencies: data.dependencies || [],\n          remaining_files: data.remaining_files || []\n        }\n      };\n    } catch (_) {\n      // If LLM damaged an unused field such as\n      // acceptance_criteria_met, recover only fields\n      // required by the next workflow node.\n    }\n\n    const taskId = extractString(output, 'task_id');\n    const agent = extractString(output, 'agent') || 'backend';\n    const files = extractArray(output, 'files');\n\n    if (!taskId) {\n      throw new Error('task_id is missing');\n    }\n\n    if (!Array.isArray(files) || files.length === 0) {\n      throw new Error('files array is missing or empty');\n    }\n\n    return {\n      json: {\n        task_id: taskId,\n        agent: agent,\n        files: files,\n        dependencies: [],\n        remaining_files: []\n      }\n    };\n\n  } catch (error) {\n    throw new Error(\n      `Item ${index} failed: ${error.message}`\n    );\n  }\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1248,
+        -1424
+      ],
+      "id": "32c61e70-d885-4171-bd77-533d38332a28",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are the Backend Developer Agent in a multi-agent software engineering team.\n\nYou receive ONE backend task from the Manager Agent.\n\nYour responsibility is to implement only the backend task assigned to you.\n\nCURRENT TASK\n\nTask ID:\n{{ $json.task_id }}\n\nTitle:\n{{ $json.title }}\n\nDescription:\n{{ $json.description }}\n\nPriority:\n{{ $json.priority }}\n\nDependencies:\n{{ JSON.stringify($json.depends_on) }}\n\nAcceptance Criteria:\n{{ JSON.stringify($json.acceptance_criteria) }}\n\nRESPONSIBILITIES\n\n1. Work only on this assigned backend task.\n2. Do not perform frontend work.\n3. Determine the minimum backend files required.\n4. Produce implementation-ready backend code.\n5. Explain required dependencies.\n6. Do NOT generate tests in this step.\n7. Do NOT generate unnecessary files.\nTECH STACK CONSTRAINTS\n\n1. Backend framework MUST be FastAPI.\n2. Use SQLAlchemy for database access.\n3. Do NOT use Flask or Django.\n4. Use Pydantic for request/response schemas.\n5. Use python-jose for JWT authentication.\n6. All tasks belong to the SAME backend project.\n7. Reuse architecture and modules created by previous backend tasks.\n8. Do not create a separate application or duplicate database/model setup for each task.\nCRITICAL OUTPUT RULES\n\n1. Return ONLY valid JSON.\n2. Do NOT use markdown.\n3. Do NOT use ```json or code fences.\n4. Generate a maximum of 2 implementation files.\n5. Keep the implementation minimal and focused.\n6. Return COMPLETE file contents.\n7. Never intentionally truncate a file.\n8. Keep the entire response compact.\n9. Do not repeat code or files.\n10. If additional files are required, mention their paths in \"remaining_files\".\n11. Before responding, verify that the JSON is syntactically complete and parseable.\n12. Do not include any text before or after the JSON.\n13. JSON property values must use normal JSON escaping only.\nDo not double-escape JSON syntax such as \\\\\\\" around array values.\n\nARCHITECTURE CONSISTENCY RULES\n\n1. Tasks are executed as part of ONE shared backend project.\n2. Never recreate or replace models created by a previous task.\n3. TASK-002 must reuse User from backend/models.py created by TASK-001.\n4. Use the existing field name \"password_hash\". Do not rename it to \"hashed_password\".\n5. Do not generate backend/models.py again unless the current task explicitly requires modifying the schema.\n6. Use imports starting with \"backend\", not \"app\".\n7. Do not assume models, files, fields, or dependencies that were not created by previous tasks.\n\nRETURN EXACTLY THIS STRUCTURE\n\n{\n  \"task_id\": \"TASK-XXX\",\n  \"agent\": \"backend\",\n  \"status\": \"generated\",\n  \"summary\": \"Short summary of generated implementation\",\n  \"files\": [\n    {\n      \"path\": \"backend/path/to/file.py\",\n      \"content\": \"complete file content\"\n    }\n  ],\n  \"dependencies\": [],\n  \"acceptance_criteria_met\": [],\n  \"remaining_files\": [],\n  \"notes\": []\n}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        816,
+        -1424
+      ],
+      "id": "84c40856-dac1-4f24-bd34-bd4fea8d7e0b",
+      "name": "AI Agent1 Backedn"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"task_id\": \"TASK-001\",\n  \"agent\": \"backend\",\n  \"status\": \"completed\",\n  \"summary\": \"Backend task implementation generated\",\n  \"files\": [\n    {\n      \"path\": \"backend/app/example.py\",\n      \"content\": \"complete file content\"\n    }\n  ],\n  \"dependencies\": [\n    \"fastapi\"\n  ],\n  \"tests\": [\n    {\n      \"path\": \"backend/tests/test_example.py\",\n      \"content\": \"complete test code\"\n    }\n  ],\n  \"acceptance_criteria_met\": [\n    \"Requirement implemented\"\n  ],\n  \"notes\": [\n    \"Additional information\"\n  ]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        928,
+        -1184
+      ],
+      "id": "2ef64bfa-9296-47ae-bd70-08586e542155",
+      "name": "Structured Output Parser1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst failedWrites = items.filter(\n  item => item.json.success !== true ||\n          (item.json.files_rejected || []).length > 0\n);\n\nif (failedWrites.length > 0) {\n  throw new Error(\n    `Cannot run tests: ${failedWrites.length} backend task(s) failed to write files`\n  );\n}\n\nreturn [\n  {\n    json: {\n      task_id: \"TEST-001\",\n      agent: \"backend\"\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        -1408
+      ],
+      "id": "25601156-3f77-4e10-9d99-ebeba7209ca2",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f7fc5b4a-09c2-4141-82f9-6f97207cba43",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2464,
+        -1392
+      ],
+      "id": "a0d79641-fa83-4cfa-97df-aa48a573233f",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are the Backend Repair Agent in a multi-agent software engineering system.\n\nThe backend code has already been generated and written to the workspace.\nAutomated pytest tests have failed.\n\nYour job is to analyze the CURRENT test failure below and generate the minimum code change required to fix the current root error.\n\nCURRENT TEST RESULT\n\nTask ID:\n{{ $json.task_id }}\n\nExit Code:\n{{ $json.exit_code }}\n\nPytest stdout:\n{{ $json.stdout }}\n\nPytest stderr:\n{{ $json.stderr }}\n\nREPAIR INSTRUCTIONS\n\n1. Read the CURRENT pytest stdout and stderr carefully.\n\n2. Identify the first/root actionable error.\n\n3. Fix the CURRENT error, not an error from a previous iteration.\n\n4. Generate only the minimum file necessary for this repair.\n\n5. If pytest says an imported function, class, variable, model, or module is missing, implement that exact missing symbol.\n\n6. If an existing file is mentioned by pytest, modify that file rather than creating an unrelated replacement.\n\n7. Preserve existing working functionality whenever possible.\n\n8. Do not modify tests.\n\n9. Do not modify frontend code.\n\n10. Do not modify n8n configuration.\n\n11. Do not modify the orchestration system.\n\n12. Ignore warnings unless they directly cause the current test failure.\n\n13. Do not attempt to fix unrelated future errors.\n\n14. Return complete file contents for every modified file.\n\n15. Never truncate file contents.\n\n16. Return valid JSON only.\n\n17. Do not use markdown or code fences.\n\n18. Do not include explanations outside JSON.\n\n19. Keep the repair response as small as possible.\n20. Do NOT rewrite a large existing file unless absolutely necessary.\n21. When modifying an existing file, preserve the existing implementation and make only the smallest change required for the current pytest error.\n22. Keep generated code compact and avoid comments, documentation, examples, and unnecessary whitespace.\n23. Generate a maximum of ONE file per repair iteration.\n24. The entire response must fit within the available output token limit.\n25. If the required complete file cannot fit safely in the response, return:\n{\n  \"task_id\": \"TEST-001\",\n  \"agent\": \"backend\",\n  \"status\": \"repair_too_large\",\n  \"summary\": \"Repair requires a file larger than the safe output limit\",\n  \"files\": [],\n  \"notes\": [\"File is too large to return completely without truncation\"]\n}\n26. Never begin returning a file unless you can return its COMPLETE content and close the JSON correctly.\n\n27. One repair iteration should solve one root problem. The tests will be executed again after the repair to discover the next problem.\n\n28. Before responding, verify that the complete response is syntactically valid JSON.\n\n29. Ensure every JSON string is properly escaped and closed.\n\n30. Ensure all arrays and objects have their required closing brackets and braces.\n\n31. The final response MUST end with the required closing JSON braces.\n\n32. Do not repeat the same repair if the CURRENT pytest output shows that the previous error has already been resolved.\n\n33. Base the repair only on the CURRENT pytest stdout/stderr provided above.\n\n34. Do not assume an old error is still present unless it appears in the CURRENT test result.\n\n35. The generated file path must match the module/file involved in the CURRENT error.\n\n36. Do not generate placeholder code, TODO code, incomplete classes, or incomplete functions.\n\n37. The generated code must be executable Python code suitable for the existing FastAPI/SQLAlchemy backend.\n\n38. Do not change the project's framework or architecture unless the CURRENT error explicitly requires it.\n\n39. Prefer the smallest possible implementation that satisfies the CURRENT failing import, symbol, schema, or behavior.\n\n40. Do not proactively implement errors mentioned later in the pytest output if they are unrelated to the first/root actionable error.\n\nIMPORTANT REPAIR BEHAVIOR\n\nThe repair process is iterative:\n\nCURRENT TEST FAILURE\n→ identify root error\n→ generate ONE minimal repair\n→ write repair\n→ run pytest again\n→ analyze the NEW current error\n→ generate next repair if required\n\nDo not attempt to repair the entire backend in one response.\n\nIMPORTANT EXAMPLE\n\nIf the CURRENT error says:\n\nImportError: cannot import name 'get_db' from 'backend.app.database'\n\nthen the generated database module MUST define get_db().\n\nThe repair should directly address get_db.\n\nDo not continue repairing an older:\n\nModuleNotFoundError: No module named 'app.database'\n\nif that error no longer appears in the CURRENT pytest output.\n\nANOTHER EXAMPLE\n\nIf the CURRENT error says:\n\nImportError: cannot import name 'User' from 'backend.app.models'\n\nthen repair the models module so that the required User model exists and can be imported.\n\nDo not simultaneously attempt to repair unrelated Teacher, Course, Grade, Attendance, API routing, authentication, or Pydantic errors unless they are required to make the CURRENT root error itself valid.\n\nOUTPUT FORMAT\n\nReturn ONLY the following JSON structure:\n\n{\n  \"task_id\": \"TEST-001\",\n  \"agent\": \"backend\",\n  \"status\": \"repair_generated\",\n  \"summary\": \"Short description of the current repair\",\n  \"files\": [\n    {\n      \"path\": \"backend/path/to/file.py\",\n      \"content\": \"COMPLETE FILE CONTENT\"\n    }\n  ],\n  \"notes\": []\n}\n\nOUTPUT REQUIREMENTS\n\n- \"task_id\" must remain TEST-001.\n- \"agent\" must be backend.\n- \"status\" must be repair_generated.\n- \"files\" must contain at most ONE file.\n- \"path\" must identify the actual backend file being repaired.\n- \"content\" must contain the COMPLETE file content.\n- Do not return markdown.\n- Do not wrap the JSON in code fences.\n- Do not add text before the JSON.\n- Do not add text after the JSON.\n\nFINAL CHECK BEFORE RESPONDING\n\nBefore producing the response, verify ALL of the following:\n\n- The CURRENT pytest stdout/stderr was analyzed.\n- The first/root actionable error was identified.\n- The generated repair directly addresses ONLY that current root error.\n- No unrelated future errors were intentionally repaired.\n- At most one file is returned.\n- The returned file is actually required for the current error.\n- The file content is complete.\n- The file content is not truncated.\n- Existing working functionality is preserved as much as possible.\n- No tests were modified.\n- No frontend files were modified.\n- No n8n files were modified.\n- No orchestration files were modified.\n- The JSON is syntactically complete.\n- Every JSON string is properly escaped and closed.\n- Every array is properly closed.\n- Every object is properly closed.\n- The response can be parsed with JSON.parse().\n- The response ends with the required closing JSON brace.\n\nIf the response would become too large, do NOT add unrelated code. Keep the repair focused and compact while still returning a complete valid file.\n\nReturn the JSON only.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        3344,
+        -1360
+      ],
+      "id": "4f30152e-6928-4ae6-bd2b-c036708d693b",
+      "name": "Backend Repair Agent",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        3344,
+        -1168
+      ],
+      "id": "afacbb77-defd-4c4b-87b3-864d4d951b40",
+      "name": "Groq Chat Model2",
+      "credentials": {
+        "groqApi": {
+          "id": "WQ35TqUPhV2ngFFy",
+          "name": "new account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map((item, index) => {\n  try {\n    const data = JSON.parse(item.json.output);\n\n    if (!Array.isArray(data.files) || data.files.length === 0) {\n      throw new Error(\"Repair Agent returned no files\");\n    }\n\n    return {\n      json: {\n        task_id: data.task_id,\n        agent: data.agent,\n        summary: data.summary,\n        files: data.files.map(file => ({\n          ...file,\n          path: file.path.startsWith(\"backend/\")\n            ? file.path\n            : `backend/${file.path}`\n        }))\n      }\n    };\n  } catch (error) {\n    throw new Error(\n      `Repair output ${index} could not be parsed: ${error.message}`\n    );\n  }\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3664,
+        -1200
+      ],
+      "id": "0dd7ed02-82c0-4e8a-b9c3-7dc435cec3d6",
+      "name": "Code (Parse Repair Output)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/tools/run-tests",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Tool-API-Key",
+              "value": "d751ddbed34aaee02f7647c6a1ca168736ffe5f44b5589542dce5542a262e0d6"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  task_id: $json.task_id,\n  agent: $json.agent\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2080,
+        -1392
+      ],
+      "id": "f307466f-939b-45a2-ae50-5c93ec797373",
+      "name": "HTTP Request run-tests"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/tools/write-files",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Tool-API-Key",
+              "value": "d751ddbed34aaee02f7647c6a1ca168736ffe5f44b5589542dce5542a262e0d6"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  task_id: $json.task_id,\n  agent: $json.agent,\n  files: $json.files\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        3920,
+        -1184
+      ],
+      "id": "af7fa635-3ea0-4990-948a-5e682195ecdc",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  const currentAttempt = item.json.repair_attempt || 0;\n  const nextAttempt = currentAttempt + 1;\n\n  return {\n    json: {\n      ...item.json,\n      repair_attempt: nextAttempt,\n      can_repair: nextAttempt <= 3\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2704,
+        -1152
+      ],
+      "id": "34bfd20e-a815-43d6-997e-eeff1f52ddd1",
+      "name": "Check Repair Attempts"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "58c1bfb8-cf00-4493-90d9-fbbebcbf987a",
+              "leftValue": "={{ $json.can_repair }}",
+              "rightValue": "=",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2928,
+        -1152
+      ],
+      "id": "44831b1b-1d60-41bf-baca-3425f6281144",
+      "name": "Can Repair? if condition"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/tools/run-tests",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Tool-API-Key",
+              "value": "d751ddbed34aaee02f7647c6a1ca168736ffe5f44b5589542dce5542a262e0d6"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  task_id: $json.task_id,\n  agent: \"backend\"\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        4144,
+        -1184
+      ],
+      "id": "ad76376b-9a6a-4846-8b47-be65c81ba200",
+      "name": "Re-run Backend Tests"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b2282588-bf50-4a35-9df9-1024fc85d388",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4416,
+        -1120
+      ],
+      "id": "c31c7ee0-52cc-4d10-8f7b-817c96fa9525",
+      "name": "Repair Tests Passed?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6fe08194-6ef5-4a4b-874c-5f33dc1d4e4a",
+              "name": "task_id",
+              "value": "={{ $json.task_id }}",
+              "type": "string"
+            },
+            {
+              "id": "a3c90f8b-dcc3-4b14-8794-20308bd4e5a5",
+              "name": "backend_status",
+              "value": "failed",
+              "type": "string"
+            },
+            {
+              "id": "a371efe8-c375-4f03-904a-37c27ef91d91",
+              "name": "repair_attempts",
+              "value": "={{ $json.repair_attempt }}",
+              "type": "number"
+            },
+            {
+              "id": "4d49458d-db52-4085-989b-beb77835d420",
+              "name": "message",
+              "value": "Backend tests failed after maximum repair attempts",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        3040,
+        -784
+      ],
+      "id": "0c69a23d-37a3-493d-95d6-ef34540342f6",
+      "name": "Backend Failed"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "25b41e2e-f69f-43b9-abbe-0f1342235433",
+              "name": "task_id",
+              "value": "={{ $json.task_id }}",
+              "type": "string"
+            },
+            {
+              "id": "6429f597-fad3-4dc2-8dd8-5996b78f4a62",
+              "name": "backend_status",
+              "value": "success",
+              "type": "string"
+            },
+            {
+              "id": "f87ff4bd-1a5f-4cc3-bdc5-0ee5ab591978",
+              "name": "repair_attempts",
+              "value": "={{ $json.repair_attempt || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "f8ae18ba-0c94-44c5-ac19-8bb876a6f9bd",
+              "name": "message",
+              "value": "Backend implementation completed and all tests passed",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        4352,
+        -1712
+      ],
+      "id": "8dd7d366-3317-4cba-8bd4-9a90f958539f",
+      "name": "Backend Success"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are the Frontend Developer Agent in a multi-agent software engineering team.\n\nYou receive ONE frontend task from the Manager Agent.\n\nYour responsibility is to implement only the frontend task assigned to you.\n\nCURRENT TASK\n\nTask ID:\n{{ $json.task_id }}\n\nTitle:\n{{ $json.title }}\n\nDescription:\n{{ $json.description }}\n\nPriority:\n{{ $json.priority }}\n\nDependencies:\n{{ JSON.stringify($json.depends_on) }}\n\nAcceptance Criteria:\n{{ JSON.stringify($json.acceptance_criteria) }}\n\nRESPONSIBILITIES\n\n1. Work only on this assigned frontend task.\n2. Do not perform backend work.\n3. Generate the minimum frontend files required for the task.\n4. Produce implementation-ready code.\n5. Reuse the existing frontend project structure.\n6. Do not create a separate frontend application for each task.\n7. Keep the UI responsive and practical.\n8. When the task requires backend APIs, use the expected existing backend endpoints.\n9. Do NOT generate tests in this step.\n10. Do NOT generate unnecessary files.\n\nTECH STACK\n\n1. Use React.\n2. Use JavaScript.\n3. Use functional components and React hooks.\n4. Keep API communication separated where appropriate.\n5. Reuse components created by previous frontend tasks.\n6. All frontend tasks belong to ONE shared frontend project.\n\nCRITICAL OUTPUT RULES\n\n1. Return ONLY valid JSON.\n2. Do NOT use markdown.\n3. Do NOT use code fences.\n4. Generate a maximum of 2 files per task.\n5. Return COMPLETE file contents.\n6. Never intentionally truncate files.\n7. Keep the response compact.\n8. Do not repeat files.\n9. Do not include text before or after the JSON.\n10. Before responding, verify that the JSON is syntactically valid.\n\nRETURN EXACTLY THIS STRUCTURE\n\n{\n  \"task_id\": \"TASK-XXX\",\n  \"agent\": \"frontend\",\n  \"status\": \"generated\",\n  \"summary\": \"Short summary of generated frontend implementation\",\n  \"files\": [\n    {\n      \"path\": \"frontend/src/path/to/file.jsx\",\n      \"content\": \"complete file content\"\n    }\n  ],\n  \"dependencies\": [],\n  \"acceptance_criteria_met\": [],\n  \"remaining_files\": [],\n  \"notes\": []\n}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        256,
+        -896
+      ],
+      "id": "9d780c19-8705-4eee-b87d-6e4acc3bafe5",
+      "name": "AI Agent1 Frontend"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -624
+      ],
+      "id": "da9da3fa-4cd1-4a63-921b-a763526eeb05",
+      "name": "Groq Chat Model3",
+      "credentials": {
+        "groqApi": {
+          "id": "z0IQ942wvLgHAvBE",
+          "name": "Groq account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfunction extractString(text, key) {\n  const regex = new RegExp(`\"${key}\"\\\\s*:\\\\s*\"([^\"]*)\"`);\n  const match = text.match(regex);\n  return match ? match[1] : null;\n}\n\nfunction extractArray(text, key) {\n  const marker = `\"${key}\"`;\n  const keyPos = text.indexOf(marker);\n\n  if (keyPos === -1) return [];\n\n  const colonPos = text.indexOf(':', keyPos + marker.length);\n  const start = text.indexOf('[', colonPos);\n\n  if (start === -1) {\n    throw new Error(`${key} array start not found`);\n  }\n\n  let depth = 0;\n  let inString = false;\n  let escaped = false;\n\n  for (let i = start; i < text.length; i++) {\n    const ch = text[i];\n\n    if (inString) {\n      if (escaped) {\n        escaped = false;\n      } else if (ch === '\\\\') {\n        escaped = true;\n      } else if (ch === '\"') {\n        inString = false;\n      }\n      continue;\n    }\n\n    if (ch === '\"') {\n      inString = true;\n      continue;\n    }\n\n    if (ch === '[') depth++;\n\n    if (ch === ']') {\n      depth--;\n\n      if (depth === 0) {\n        return JSON.parse(text.substring(start, i + 1));\n      }\n    }\n  }\n\n  throw new Error(`${key} array is incomplete`);\n}\n\nreturn items.map((item, index) => {\n  try {\n    let output = String(item.json.output || '').trim();\n\n    output = output\n      .replace(/^```json\\s*/i, '')\n      .replace(/^```\\s*/, '')\n      .replace(/\\s*```$/, '');\n\n    // First try normal JSON parsing\n    try {\n      const data = JSON.parse(output);\n\n      return {\n        json: {\n          task_id: data.task_id,\n          agent: data.agent || 'frontend',\n          files: data.files || [],\n          dependencies: data.dependencies || [],\n          remaining_files: data.remaining_files || []\n        }\n      };\n    } catch (_) {\n      // Recover required fields if the LLM damaged\n      // an unused JSON field.\n    }\n\n    const taskId = extractString(output, 'task_id');\n    const agent = extractString(output, 'agent') || 'frontend';\n    const files = extractArray(output, 'files');\n\n    if (!taskId) {\n      throw new Error('task_id is missing');\n    }\n\n    if (!Array.isArray(files) || files.length === 0) {\n      throw new Error('files array is missing or empty');\n    }\n\n    return {\n      json: {\n        task_id: taskId,\n        agent,\n        files,\n        dependencies: [],\n        remaining_files: []\n      }\n    };\n\n  } catch (error) {\n    throw new Error(\n      `Frontend item ${index} failed: ${error.message}`\n    );\n  }\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        -896
+      ],
+      "id": "2ae57f81-3f92-4dc4-8594-f01bc245f4a7",
+      "name": "Parse Frontend Output"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        848,
+        -864
+      ],
+      "id": "25713126-1e47-4872-91f3-33a7e32f329c",
+      "name": "Write Frontend Files",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3152,
+        -1152
+      ],
+      "id": "7eee1a0b-4e41-4241-aeeb-c9eb79adbde5",
+      "name": "Wait Before Repair",
+      "webhookId": "c0f4e5f0-6130-4ae3-aae6-c7b45e7ace31"
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        592,
+        -1280
+      ],
+      "id": "2e430d28-1b40-4f7c-9cf9-9425490009d9",
+      "name": "Wait",
+      "webhookId": "25959f22-7f52-4069-ae7c-c1cf8c3ee1ae"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        224,
+        -1360
+      ],
+      "id": "b8495257-2bc8-4e67-a2f6-b0fb8582b057",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "abed1f65-d8b8-43df-91cf-4359d3db2a86",
+              "name": "backend_status",
+              "value": "completed",
+              "type": "string"
+            },
+            {
+              "id": "24c3a3d5-1af9-415b-a798-92c4b8866c72",
+              "name": "message",
+              "value": "All backend tasks completed successfully",
+              "type": "string"
+            },
+            {
+              "id": "ed82ee52-1b35-4a37-b8dd-1b4b034f823c",
+              "name": "project_id",
+              "value": "PRJ-001",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        464,
+        -1456
+      ],
+      "id": "8ed22031-7296-4a19-ae20-32e2e182ed8d",
+      "name": "All Backend Tasks Complete"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent1 Frontend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1 Backedn",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1 Backedn": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        []
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request run-tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Check Repair Attempts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Backend Repair Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend Repair Agent": {
+      "main": [
+        [
+          {
+            "node": "Code (Parse Repair Output)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code (Parse Repair Output)": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request run-tests": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Repair Attempts": {
+      "main": [
+        [
+          {
+            "node": "Can Repair? if condition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can Repair? if condition": {
+      "main": [
+        [
+          {
+            "node": "Wait Before Repair",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Backend Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Re-run Backend Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Re-run Backend Tests": {
+      "main": [
+        [
+          {
+            "node": "Repair Tests Passed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Repair Tests Passed?": {
+      "main": [
+        [
+          {
+            "node": "Backend Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Repair Attempts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backend Success": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1 Frontend",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1 Frontend": {
+      "main": [
+        [
+          {
+            "node": "Parse Frontend Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Frontend Output": {
+      "main": [
+        [
+          {
+            "node": "Write Frontend Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before Repair": {
+      "main": [
+        [
+          {
+            "node": "Backend Repair Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1 Backedn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "All Backend Tasks Complete",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "All Backend Tasks Complete": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "3322264e-b18a-4437-b58c-eb8a50044ebc",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "19fb2aeaeefd867f810c10353cd527d48bc01e0838890711bc8b304e3818297e"
+  },
+  "nodeGroups": [],
+  "id": "HOxpxofjQtBlbvBf",
+  "tags": []
+}

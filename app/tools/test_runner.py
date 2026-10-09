@@ -8,6 +8,16 @@ from app.models.task import RunEvidence
 
 logger = logging.getLogger(__name__)
 
+MAX_OUTPUT_CHARS = 8000
+
+
+def truncate_test_output(text: str) -> str:
+    if len(text) <= MAX_OUTPUT_CHARS:
+        return text
+
+    half = MAX_OUTPUT_CHARS // 2
+    return text[:half] + "\n\n... OUTPUT TRUNCATED ...\n\n" + text[-half:]
+
 
 class BackendTestRunner:
     def __init__(self, workspace_root: Path | str = "workspace", timeout: float = 30) -> None:
@@ -59,8 +69,8 @@ class BackendTestRunner:
             passed=exit_code == 0,
             exit_code=exit_code,
             summary=summary,
-            stdout=stdout[-4000:],
-            stderr=stderr[-4000:],
+            stdout=truncate_test_output(stdout),
+            stderr=truncate_test_output(stderr),
         )
 
     @staticmethod
