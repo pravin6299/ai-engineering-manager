@@ -4,9 +4,10 @@
 
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email VARCHAR(255) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'teacher', 'student', 'staff'))
+    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'teacher', 'student', 'staff')),
+    CONSTRAINT uq_users_email UNIQUE (email)
 );
 
 CREATE TABLE IF NOT EXISTS students (

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from backend.app.database import get_db
-from backend.app.models import User, StudentProfile, Grade, Attendance, Course
+from backend.app.models import User, Student, StudentProfile, Grade, Attendance, Course
 from backend.app.schemas import StudentDashboardResponse, GradeResponse, AttendanceResponse, StudentProfileResponse, CourseResponse
 from backend.app.auth import get_current_user
 

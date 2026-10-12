@@ -47,9 +47,9 @@ def test_schema_creation_and_relationships(db_session):
 
     fetched_user = db_session.query(User).filter(User.email == "student@school.com").first()
     assert fetched_user is not None
-    assert fetched_user.student_profile is not None
-    assert fetched_user.student_profile.first_name == "John"
-    assert fetched_user.student_profile.enrollment_number == "ENR12345"
+    assert fetched_user.student is not None
+    assert fetched_user.student.first_name == "John"
+    assert fetched_user.student.enrollment_number == "ENR12345"
 
     fetched_student = db_session.query(Student).filter(Student.enrollment_number == "ENR12345").first()
     assert fetched_student is not None

@@ -5,6 +5,8 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.app.main import app
 from backend.app.database import Base, get_db
+from backend.app.models import User
+from backend.app.auth import get_password_hash
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test_student_management.db"
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
@@ -28,7 +30,12 @@ def setup_db():
     Base.metadata.drop_all(bind=engine)
 
 def get_token(email, password, role="admin"):
-    client.post("/api/auth/register", json={"email": email, "password": password, "role": role})
+    if role in {"admin", "teacher"}:
+        with TestingSessionLocal() as db:
+            db.add(User(email=email, hashed_password=get_password_hash(password), role=role))
+            db.commit()
+    else:
+        client.post("/api/auth/register", json={"email": email, "password": password, "role": role})
     res = client.post("/api/auth/login", json={"email": email, "password": password})
     return res.json()["access_token"]
 

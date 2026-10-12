@@ -2,6 +2,9 @@ import pytest
 from fastapi.testclient import TestClient
 from backend.app.main import app
 from backend.app.database import Base, engine
+from backend.app.database import SessionLocal
+from backend.app.models import User
+from backend.app.auth import get_password_hash
 
 @pytest.fixture(autouse=True)
 def setup_db():
@@ -12,23 +15,27 @@ def setup_db():
 client = TestClient(app)
 
 def test_registration_login_and_rbac():
-    # 1. Register Admin
+    # Privileged roles must be provisioned, not selected at public registration.
     res = client.post("/api/auth/register", json={
         "email": "admin@test.com",
         "password": "adminpass",
         "role": "admin"
     })
-    assert res.status_code == 201
-    assert res.json()["role"] == "admin"
+    assert res.status_code == 403
 
-    # 2. Register Teacher
     res = client.post("/api/auth/register", json={
         "email": "teacher@test.com",
         "password": "teacherpass",
         "role": "teacher"
     })
-    assert res.status_code == 201
-    assert res.json()["role"] == "teacher"
+    assert res.status_code == 403
+
+    with SessionLocal() as db:
+        db.add_all([
+            User(email="admin@test.com", hashed_password=get_password_hash("adminpass"), role="admin"),
+            User(email="teacher@test.com", hashed_password=get_password_hash("teacherpass"), role="teacher"),
+        ])
+        db.commit()
 
     # 3. Register Student
     res = client.post("/api/auth/register", json={

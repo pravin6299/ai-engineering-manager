@@ -18,7 +18,8 @@ from typing import List
 
 # Import the authentication dependency that validates JWT and returns a user object.
 # This dependency is defined in TASK‑001.
-from app.dependencies.auth import get_current_user
+from backend.app.auth import get_current_user
+from backend.app.models import User
 
 router = APIRouter()
 
@@ -46,14 +47,14 @@ class StudentDashboardResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Mock data‑access helpers (replace with real DB calls in production)
 # ---------------------------------------------------------------------------
-def get_student_profile(user_id: int) -> Profile:
+def get_student_profile(user: User) -> Profile:
     """Return a dummy profile for the given user id.
     In production this would fetch data from the ``students`` table.
     """
     return Profile(
-        id=user_id,
-        name="John Doe",
-        email="john.doe@example.com"
+        id=user.id,
+        name=user.full_name or user.email,
+        email=user.email
     )
 
 def get_academic_data(user_id: int) -> AcademicData:
@@ -76,20 +77,19 @@ def get_academic_data(user_id: int) -> AcademicData:
     summary="Return the authenticated student's dashboard data",
     tags=["Student Dashboard"]
 )
-async def get_student_dashboard(current_user: dict = Depends(get_current_user)):
+async def get_student_dashboard(current_user: User = Depends(get_current_user)):
     """Return profile and academic data for the authenticated student.
 
     * ``current_user`` is injected by ``get_current_user`` and is expected to be a
       dictionary (or Pydantic model) containing at least ``id`` and ``role``.
     * If the role is not ``student`` a ``403`` error is raised.
     """
-    if current_user.get("role") != "student":
+    if current_user.role != "student":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User does not have permission to access student dashboard"
         )
 
-    user_id = current_user["id"]
-    profile = get_student_profile(user_id)
-    academic = get_academic_data(user_id)
+    profile = get_student_profile(current_user)
+    academic = get_academic_data(current_user.id)
     return StudentDashboardResponse(profile=profile, academic=academic)

@@ -105,6 +105,7 @@ def delete_student_profile(
 
 # --- Grades CRUD ---
 
+@router.post("/students/grades", response_model=GradeResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/grades", response_model=GradeResponse, status_code=status.HTTP_201_CREATED)
 def create_grade(
     grade_in: GradeCreate,
@@ -174,6 +175,7 @@ def update_grade(
     db.refresh(grade)
     return grade
 
+@router.delete("/students/grades/{grade_id}", status_code=status.HTTP_204_NO_CONTENT)
 @router.delete("/grades/{grade_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_grade(
     grade_id: int,
@@ -189,6 +191,7 @@ def delete_grade(
 
 # --- Attendance CRUD ---
 
+@router.post("/students/attendance", response_model=AttendanceResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/attendance", response_model=AttendanceResponse, status_code=status.HTTP_201_CREATED)
 def create_attendance(
     att_in: AttendanceCreate,

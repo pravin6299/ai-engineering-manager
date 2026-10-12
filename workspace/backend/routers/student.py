@@ -1,85 +1,76 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 
-from backend.models import User, Schedule, Grade
+from backend import models
 from backend.database import get_db
-from backend.auth import get_current_user
-from pydantic import BaseModel
+from backend.auth import verify_jwt_token, JWTError
 
 router = APIRouter(prefix="/api/student", tags=["student"])
 
-# ---------- Response Schemas ----------
+# Pydantic response schemas
+from pydantic import BaseModel
+
 class StudentProfile(BaseModel):
     id: int
+    full_name: str
     email: str
-    full_name: str | None = None
-
-    class Config:
-        orm_mode = True
-
-class ScheduleItem(BaseModel):
-    id: int
-    course_name: str
-    start_time: str
-    end_time: str
-    location: str | None = None
+    enrollment_year: int
 
     class Config:
         orm_mode = True
 
 class GradeItem(BaseModel):
-    id: int
+    course_code: str
     course_name: str
     grade: str
 
     class Config:
         orm_mode = True
 
-# ---------- Endpoints ----------
-@router.get("/profile", response_model=StudentProfile)
-def get_profile(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Return the logged‑in student's profile information."""
-    # Assuming the User model stores the needed profile fields.
-    return StudentProfile.from_orm(current_user)
+class ScheduleItem(BaseModel):
+    day: str
+    start_time: str
+    end_time: str
+    course_code: str
+    location: str
 
-@router.get("/schedule", response_model=List[ScheduleItem])
-def get_schedule(
-    page: int = Query(1, ge=1),
-    size: int = Query(10, ge=1, le=100),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Return the current class schedule for the logged‑in student, paginated."""
-    offset = (page - 1) * size
-    schedule_q = (
-        db.query(Schedule)
-        .filter(Schedule.student_id == current_user.id)
-        .order_by(Schedule.start_time)
-        .offset(offset)
-        .limit(size)
-    )
-    items = schedule_q.all()
-    return [ScheduleItem.from_orm(item) for item in items]
+    class Config:
+        orm_mode = True
+
+# Dependency to get current student from JWT
+async def get_current_student(token: str = Depends(verify_jwt_token), db: Session = Depends(get_db)) -> models.Student:
+    try:
+        payload = token
+        user_id: int = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+
+    student = db.query(models.Student).filter(models.Student.user_id == user_id).first()
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+    return student
+
+@router.get("/profile", response_model=StudentProfile)
+def get_profile(current_student: models.Student = Depends(get_current_student)):
+    return current_student
 
 @router.get("/grades", response_model=List[GradeItem])
-def get_grades(
-    page: int = Query(1, ge=1),
-    size: int = Query(10, ge=1, le=100),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Return a list of courses with grades for the logged‑in student, paginated."""
-    offset = (page - 1) * size
-    grades_q = (
-        db.query(Grade)
-        .filter(Grade.student_id == current_user.id)
-        .order_by(Grade.course_name)
-        .offset(offset)
-        .limit(size)
+def get_grades(db: Session = Depends(get_db), current_student: models.Student = Depends(get_current_student)):
+    grades = (
+        db.query(models.Grade)
+        .filter(models.Grade.student_id == current_student.id)
+        .all()
     )
-    items = grades_q.all()
-    return [GradeItem.from_orm(item) for item in items]
+    return grades
+
+@router.get("/schedule", response_model=List[ScheduleItem])
+def get_schedule(db: Session = Depends(get_db), current_student: models.Student = Depends(get_current_student)):
+    schedule_entries = (
+        db.query(models.Schedule)
+        .filter(models.Schedule.student_id == current_student.id)
+        .all()
+    )
+    return schedule_entries

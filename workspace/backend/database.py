@@ -1,25 +1,22 @@
-import os
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker
+from backend.models import Base
 
-# Database URL – default to SQLite for simplicity; can be overridden via DATABASE_URL env var
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./app.db")
+# Example SQLite URL; replace with actual DB URL in production
+SQLALCHEMY_DATABASE_URL = "sqlite:///./school.db"
 
-# Engine configuration – echo can be toggled via env var for debugging
 engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
-    echo=os.getenv("SQLALCHEMY_ECHO", "false").lower() == "true",
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
 )
 
-# Session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base class for declarative models
-Base = declarative_base()
+def init_db():
+    """Create all tables based on the models if they do not exist."""
+    Base.metadata.create_all(bind=engine)
 
 def get_db():
-    """Dependency that provides a SQLAlchemy session and ensures cleanup."""
+    """FastAPI dependency that provides a DB session and ensures cleanup."""
     db = SessionLocal()
     try:
         yield db
