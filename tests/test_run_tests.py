@@ -54,9 +54,42 @@ def test_failing_pytest_returns_json(api):
     response = post(api, {"X-Tool-API-Key": "test-secret"})
     assert response.status_code == 200
     assert response.json()["success"] is False
-    assert response.json()["exit_code"] == 1
+    assert response.json()["exit_code"] == 1, response.json()
     assert "AssertionError" in response.json()["stdout"]
     assert response.json()["message"] == "Tests failed"
+
+
+def test_concurrent_requests_use_separate_sqlite_databases(api):
+    make_test(
+        api[1],
+        "import sqlite3\n"
+        "import time\n"
+        "def test_isolated():\n"
+        "    db = sqlite3.connect('test_auth_api.db')\n"
+        "    db.execute('CREATE TABLE roles (id INTEGER)')\n"
+        "    time.sleep(0.1)\n"
+        "    db.close()\n",
+    )
+    existing = api[1] / "test_auth_api.db"
+    existing.write_bytes(b"persisted-data")
+
+    async def requests():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=api[0].app), base_url="http://test"
+        ) as client:
+            return await asyncio.gather(*(
+                client.post(
+                    "/tools/run-tests",
+                    headers={"X-Tool-API-Key": "test-secret"},
+                    json={"task_id": task_id, "agent": "backend"},
+                )
+                for task_id in ("TASK-001", "TASK-002")
+            ))
+
+    responses = asyncio.run(requests())
+    assert [response.status_code for response in responses] == [200, 200]
+    assert all(response.json()["success"] for response in responses)
+    assert existing.read_bytes() == b"persisted-data"
 
 
 def test_missing_or_wrong_key_does_not_run_tests(api, monkeypatch):

@@ -1,88 +1,91 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
+from datetime import datetime
 
-from backend import models
+from backend.models import User, Course, Enrollment, Grade, Notification
 from backend.database import get_db
-from backend.auth import get_current_user  # assumes existing JWT auth dependency
+from backend.auth import get_current_user
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/student", tags=["student"])
+router = APIRouter(prefix="/api/student", tags=["Student Dashboard"])
 
-
-class ClassInfo(BaseModel):
-    id: int
-    name: str
-
-    class Config:
-        orm_mode = True
-
-
-class GradeInfo(BaseModel):
-    class_id: int
-    grade: float
-
-    class Config:
-        orm_mode = True
-
-
-class StudentProfile(BaseModel):
+# Pydantic response schemas
+class UserProfile(BaseModel):
     id: int
     email: str
-    full_name: str
+    full_name: str | None = None
 
     class Config:
         orm_mode = True
 
+class CourseInfo(BaseModel):
+    id: int
+    title: str
+    description: str | None = None
+
+    class Config:
+        orm_mode = True
+
+class GradeInfo(BaseModel):
+    course_id: int
+    grade: str
+
+    class Config:
+        orm_mode = True
+
+class NotificationInfo(BaseModel):
+    id: int
+    message: str
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
 
 class StudentDashboardResponse(BaseModel):
-    student: StudentProfile
-    classes: List[ClassInfo]
+    profile: UserProfile
+    courses: List[CourseInfo]
     grades: List[GradeInfo]
-
-    class Config:
-        orm_mode = True
-
+    notifications: List[NotificationInfo]
 
 @router.get("/dashboard", response_model=StudentDashboardResponse)
-def get_student_dashboard(
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+def get_dashboard(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    # Ensure the user is a student (optional, based on role field)
-    if getattr(current_user, "role", "student") != "student":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access forbidden: not a student",
-        )
+    # Profile information
+    profile = UserProfile.from_orm(current_user)
 
-    # Student profile
-    student_profile = StudentProfile(
-        id=current_user.id,
-        email=current_user.email,
-        full_name=getattr(current_user, "full_name", ""),
-    )
-
-    # Enrolled classes
-    classes = (
-        db.query(models.Class)
-        .join(models.Enrollment, models.Class.id == models.Enrollment.class_id)
-        .filter(models.Enrollment.student_id == current_user.id)
+    # Enrolled courses
+    enrolled_courses = (
+        db.query(Course)
+        .join(Enrollment, Enrollment.course_id == Course.id)
+        .filter(Enrollment.student_id == current_user.id)
         .all()
     )
-    class_list = [ClassInfo.from_orm(cls) for cls in classes]
+    courses = [CourseInfo.from_orm(c) for c in enrolled_courses]
 
     # Grades
-    grades_query = (
-        db.query(models.Grade, models.Enrollment.class_id)
-        .join(models.Enrollment, models.Grade.enrollment_id == models.Enrollment.id)
-        .filter(models.Enrollment.student_id == current_user.id)
+    grade_records = (
+        db.query(Grade)
+        .filter(Grade.student_id == current_user.id)
         .all()
     )
-    grade_list = [GradeInfo(class_id=cls_id, grade=grade.value) for grade, cls_id in grades_query]
+    grades = [GradeInfo.from_orm(g) for g in grade_records]
+
+    # Recent notifications (limit to latest 5)
+    recent_notifications = (
+        db.query(Notification)
+        .filter(Notification.user_id == current_user.id)
+        .order_by(Notification.created_at.desc())
+        .limit(5)
+        .all()
+    )
+    notifications = [NotificationInfo.from_orm(n) for n in recent_notifications]
 
     return StudentDashboardResponse(
-        student=student_profile,
-        classes=class_list,
-        grades=grade_list,
+        profile=profile,
+        courses=courses,
+        grades=grades,
+        notifications=notifications,
     )

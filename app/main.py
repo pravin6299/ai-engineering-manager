@@ -3,7 +3,7 @@ import os
 from hmac import compare_digest
 from pathlib import Path
 
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
@@ -20,6 +20,8 @@ from app.tools.dependency_manager import DependencyManager
 from app.tools.frontend_dependency_manager import FrontendDependencyManager
 from app.tools.frontend_test_runner import FrontendTestRunner
 from app.tools.test_runner import BackendTestRunner
+from app.tools.project_context import BackendProjectContext, ProjectContextError
+from app.tools.safe_write import SafeFileWriter, WriteRejection
 from app.tools.workspace import WorkspacePathError, WorkspaceTool
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -91,23 +93,17 @@ def _valid_tool_api_key(provided_key: str | None) -> bool:
     )
 
 
-def _validate_write_path(path: str, agent: str) -> None:
-    parts = path.split("/")
-    if (
-        len(parts) < 2
-        or parts[0] != agent
-        or "\\" in path
-        or any(part in {"", ".", ".."} or part.startswith(".") for part in parts)
-        or any(part in {"node_modules", "__pycache__", "venv", "env"} for part in parts)
-    ):
-        raise WorkspacePathError(f"Path must be a regular file under {agent}/")
-    resolved = workspace_tool._resolve(path)
+@app.get("/tools/project-context")
+async def project_context(
+    files: list[str] | None = Query(default=None),
+    x_tool_api_key: str | None = Header(default=None),
+) -> dict:
+    if not _valid_tool_api_key(x_tool_api_key):
+        raise HTTPException(status_code=401, detail="Unauthorized")
     try:
-        resolved.relative_to(workspace_tool.root / agent)
-    except ValueError as exc:
-        raise WorkspacePathError("Path escapes agent workspace") from exc
-    if resolved.is_dir():
-        raise WorkspacePathError("Path refers to a directory")
+        return BackendProjectContext(workspace_tool).get(files)
+    except ProjectContextError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @app.post(
@@ -116,10 +112,16 @@ def _validate_write_path(path: str, agent: str) -> None:
     responses={
         400: {"model": WriteFilesResponse},
         401: {"model": WriteFilesResponse},
+        409: {"model": WriteFilesResponse},
+        413: {"model": WriteFilesResponse},
         500: {"model": WriteFilesResponse},
     },
 )
-async def write_files(request: WriteFilesRequest, x_tool_api_key: str | None = Header(default=None)):
+async def write_files(
+    request: WriteFilesRequest,
+    x_tool_api_key: str | None = Header(default=None),
+    x_tool_modify_key: str | None = Header(default=None),
+):
     if not _valid_tool_api_key(x_tool_api_key):
         return _write_files_error(request.task_id, 401, "Unauthorized")
     if request.agent not in {"backend", "frontend"}:
@@ -128,34 +130,31 @@ async def write_files(request: WriteFilesRequest, x_tool_api_key: str | None = H
             [file.path for file in request.files],
         )
 
-    rejected: list[str] = []
-    seen: set[str] = set()
-    for file in request.files:
-        try:
-            _validate_write_path(file.path, request.agent)
-            if file.path in seen:
-                raise WorkspacePathError("Duplicate file path")
-            seen.add(file.path)
-        except (WorkspacePathError, OSError):
-            rejected.append(file.path)
-    if rejected:
-        return _write_files_error(request.task_id, 400, "Unsafe file path rejected; no files written", rejected)
-
-    written: list[str] = []
-    for file in request.files:
-        try:
-            _validate_write_path(file.path, request.agent)
-            workspace_tool.write_file(file.path, file.content)
-        except (WorkspacePathError, OSError):
-            evidence = WriteFilesResponse(
-                task_id=request.task_id,
-                success=False,
-                files_written=written,
-                files_rejected=[file.path],
-                message="File write failed",
-            )
-            return JSONResponse(status_code=500, content=evidence.model_dump())
-        written.append(file.path)
+    configured_modify_key = os.getenv("N8N_TOOL_MODIFY_KEY")
+    trusted_update = bool(
+        configured_modify_key and isinstance(x_tool_modify_key, str)
+        and compare_digest(x_tool_modify_key.encode("utf-8"), configured_modify_key.encode("utf-8"))
+    )
+    try:
+        written = SafeFileWriter(workspace_tool).write(request.files, request.agent, trusted_update)
+    except WriteRejection as exc:
+        response = _write_files_error(request.task_id, exc.status_code, exc.reason, exc.paths)
+        response_body = WriteFilesResponse.model_validate_json(response.body).model_dump()
+        response_body["files_written"] = exc.files_written
+        response_body["rejections"] = [{"path": path, "reason": exc.reason} for path in exc.paths]
+        return JSONResponse(status_code=exc.status_code, content=response_body)
+    except OSError:
+        paths = [file.path for file in request.files]
+        response = WriteFilesResponse(
+            task_id=request.task_id,
+            success=False,
+            files_written=[],
+            files_rejected=paths,
+            message="write_failed",
+        )
+        body = response.model_dump()
+        body["rejections"] = [{"path": path, "reason": "write_failed"} for path in paths]
+        return JSONResponse(status_code=500, content=body)
     return WriteFilesResponse(
         task_id=request.task_id,
         success=True,

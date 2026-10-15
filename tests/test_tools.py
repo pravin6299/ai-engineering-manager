@@ -83,14 +83,81 @@ def test_runner_uses_safe_deterministic_subprocess_environment(
         sys.executable,
         "-m",
         "pytest",
-        "backend/tests",
+        str(tmp_path / "backend/tests"),
         "-q",
     )
-    assert captured["kwargs"]["cwd"] == tmp_path.resolve()
+    run_root = captured["kwargs"]["cwd"]
+    assert run_root != tmp_path.resolve()
+    assert not run_root.exists()  # Only this invocation's temporary directory is removed.
     assert captured["kwargs"]["env"]["PYTHONPATH"] == str(tmp_path.resolve())
+    assert captured["kwargs"]["env"]["DATABASE_URL"] == f"sqlite:///{run_root / 'test.db'}"
     assert captured["kwargs"]["env"]["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] == "1"
     assert captured["kwargs"]["env"]["PYTHONNOUSERSITE"] == "1"
     assert "shell" not in captured["kwargs"]
+
+
+def test_runner_isolates_hardcoded_relative_sqlite_files(tmp_path: Path) -> None:
+    tests_dir = tmp_path / "backend/tests"
+    tests_dir.mkdir(parents=True)
+    (tests_dir / "test_database.py").write_text(
+        "import os\n"
+        "import sqlite3\n"
+        "def test_database():\n"
+        "    assert os.environ['DATABASE_URL'].startswith('sqlite:////')\n"
+        "    connection = sqlite3.connect('test_auth_api.db')\n"
+        "    connection.execute('CREATE TABLE roles (id INTEGER)')\n"
+        "    connection.close()\n",
+        encoding="utf-8",
+    )
+    persisted = tmp_path / "test_auth_api.db"
+    persisted.write_bytes(b"existing-user-data")
+    default_database = tmp_path / "test.db"
+    default_database.write_bytes(b"existing-default-data")
+    runner = BackendTestRunner(tmp_path, timeout=10)
+
+    first = asyncio.run(runner.run())
+    second = asyncio.run(runner.run())
+
+    assert first.passed and second.passed, (first, second)
+    assert persisted.read_bytes() == b"existing-user-data"
+    assert default_database.read_bytes() == b"existing-default-data"
+
+
+def test_runner_serializes_concurrent_invocations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    active = 0
+    peak = 0
+    directories = []
+
+    class FakeProcess:
+        returncode = 0
+
+        async def communicate(self):
+            nonlocal active
+            await asyncio.sleep(0.02)
+            active -= 1
+            return b"1 passed\n", b""
+
+    async def fake_create_subprocess_exec(*command, **kwargs):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        directories.append(kwargs["cwd"])
+        assert kwargs["cwd"] != tmp_path
+        assert command[3] == str(tmp_path / "backend/tests")
+        return FakeProcess()
+
+    monkeypatch.setattr(
+        "app.tools.test_runner.asyncio.create_subprocess_exec", fake_create_subprocess_exec
+    )
+
+    async def run_both():
+        return await asyncio.gather(BackendTestRunner(tmp_path).run(), BackendTestRunner(tmp_path).run())
+
+    results = asyncio.run(run_both())
+    assert all(result.passed for result in results)
+    assert peak == 1
+    assert directories[0] != directories[1]
+    assert all(not path.exists() for path in directories)
 
 
 def test_runner_preserves_generated_virtualenv_interpreter_path(

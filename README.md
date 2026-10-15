@@ -148,21 +148,47 @@ the API. Send the same secret from n8n in the `X-Tool-API-Key` header. Missing o
 incorrect keys receive HTTP 401; the key is never logged or returned. Swagger's
 `Try it out` form exposes this header as `x-tool-api-key`.
 
-`POST /tools/write-files` accepts `agent: "backend"` for paths below
-`workspace/backend/` and `agent: "frontend"` for paths below
-`workspace/frontend/` (for example, `frontend/src/App.jsx`). It checks all paths
-before writing, rejects unsafe paths with structured evidence, and creates safe
-parent directories as needed. It does not execute files, install packages, or
-run tests. Keep this endpoint on a trusted network; the token grants write access
-to generated backend files. The request and response schemas are available at
-`/docs` and `/openapi.json`.
+`POST /tools/write-files` creates backend application source only under
+`backend/app/**/*.py`; backend `tests/test_*.py` and `requirements.txt` remain
+supported. Legacy root modules such as `backend/models.py` are rejected.
+Frontend paths remain confined to `frontend/`. New files need only the usual
+tool key. Existing files require `allow_modify: true`, their current SHA-256
+from `GET /tools/project-context` (for backend app sources), and a separately
+configured `N8N_TOOL_MODIFY_KEY` sent in `X-Tool-Modify-Key`. Store that key in
+trusted n8n credentials, not in LLM output. Missing/incorrect authorization or
+a stale hash rejects the whole request. The endpoint does not execute files,
+install packages, or run tests. Schemas are at `/docs` and `/openapi.json`.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/tools/write-files \
   -H "X-Tool-API-Key: ${N8N_TOOL_API_KEY}" \
   -H 'Content-Type: application/json' \
-  -d '{"task_id":"TASK-002","agent":"backend","files":[{"path":"backend/app/main.py","content":"from fastapi import FastAPI\napp = FastAPI()\n"}]}'
+  -d '{"task_id":"TASK-002","agent":"backend","files":[{"path":"backend/app/routes/new_feature.py","content":"from fastapi import APIRouter\nrouter = APIRouter()\n"}]}'
 ```
+
+For an existing backend app file, first obtain its hash from project context,
+then submit an update using a trusted header:
+
+```json
+{
+  "task_id": "TASK-002",
+  "agent": "backend",
+  "files": [{
+    "path": "backend/app/main.py",
+    "content": "updated source",
+    "allow_modify": true,
+    "expected_sha256": "<64-character SHA-256 from project context>"
+  }]
+}
+```
+
+The writer validates and stages the full batch before committing. It serializes
+cooperating requests within a process and uses a workspace lock file across
+processes sharing the same filesystem. It rolls back completed file operations
+if a later operation fails, but a process crash, filesystem failure during
+rollback, or non-cooperating external writer can still leave a partial batch;
+multi-file writes are not fully atomic. Rejections retain the existing response
+fields and add `rejections` entries with a path and machine-readable reason.
 
 `POST /tools/run-tests` uses the same `X-Tool-API-Key` header. It accepts only a
 task ID and `agent: "backend"`; clients cannot select paths, interpreters, or

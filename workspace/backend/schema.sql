@@ -1,29 +1,52 @@
+-- SQL script for school management system schema
+
+CREATE TABLE roles (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE
+);
+
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    email VARCHAR NOT NULL UNIQUE,
-    password_hash VARCHAR NOT NULL,
-    role VARCHAR NOT NULL
+    username VARCHAR(50) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    role_id INTEGER NOT NULL REFERENCES roles(id)
 );
+
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_email ON users(email);
 
 CREATE TABLE students (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL UNIQUE,
-    grade_level VARCHAR NOT NULL,
-    CONSTRAINT fk_student_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+    enrollment_date TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE classes (
+CREATE TABLE courses (
     id SERIAL PRIMARY KEY,
-    name VARCHAR NOT NULL,
-    teacher_id INTEGER NOT NULL,
-    CONSTRAINT fk_class_teacher FOREIGN KEY (teacher_id) REFERENCES users(id) ON DELETE RESTRICT
+    code VARCHAR(20) NOT NULL UNIQUE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    credits INTEGER NOT NULL
 );
+
+CREATE INDEX idx_courses_code ON courses(code);
 
 CREATE TABLE enrollments (
-    student_id INTEGER NOT NULL,
-    class_id INTEGER NOT NULL,
-    PRIMARY KEY (student_id, class_id),
-    CONSTRAINT fk_enrollment_student FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
-    CONSTRAINT fk_enrollment_class FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
-    CONSTRAINT uq_student_class UNIQUE (student_id, class_id)
+    id SERIAL PRIMARY KEY,
+    student_id INTEGER NOT NULL REFERENCES students(id),
+    course_id INTEGER NOT NULL REFERENCES courses(id),
+    enrollment_date TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_student_course UNIQUE (student_id, course_id)
 );
+
+CREATE TABLE audit_logs (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    action VARCHAR(100) NOT NULL,
+    timestamp TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+    details TEXT
+);
+
+CREATE INDEX idx_audit_logs_timestamp ON audit_logs(timestamp);

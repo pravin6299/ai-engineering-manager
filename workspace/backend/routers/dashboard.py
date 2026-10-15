@@ -1,84 +1,87 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
-from pydantic import BaseModel
+from typing import List, Optional
 
-from backend.auth import get_current_user  # returns authenticated User model
-from backend.database import get_db
-from backend.models import User, Course, Enrollment, Grade, Notification
+from backend import models, schemas, deps
+from backend.auth import get_current_user
 
-router = APIRouter(prefix="/api/student", tags=["Student Dashboard"])
+router = APIRouter(prefix="/api/student", tags=["student-dashboard"])
 
-class CourseInfo(BaseModel):
-    id: int
-    name: str
-    code: str
-
-    class Config:
-        orm_mode = True
-
-class GradeInfo(BaseModel):
-    course_id: int
-    grade: str
-
-    class Config:
-        orm_mode = True
-
-class NotificationInfo(BaseModel):
-    id: int
-    message: str
-    read: bool
-
-    class Config:
-        orm_mode = True
-
-class DashboardResponse(BaseModel):
+# Pydantic response schemas
+class ProfileSchema(schemas.BaseModel):
     id: int
     email: str
-    full_name: str
-    courses: List[CourseInfo]
-    grades: List[GradeInfo]
-    notifications: List[NotificationInfo]
+    full_name: Optional[str] = None
 
     class Config:
         orm_mode = True
 
+class CourseSchema(schemas.BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+
+    class Config:
+        orm_mode = True
+
+class GradeSchema(schemas.BaseModel):
+    course_id: int
+    grade: Optional[float] = None
+
+    class Config:
+        orm_mode = True
+
+class NotificationSchema(schemas.BaseModel):
+    id: int
+    message: str
+    created_at: Optional[str] = None
+
+    class Config:
+        orm_mode = True
+
+class DashboardResponse(schemas.BaseModel):
+    profile: ProfileSchema
+    courses: List[CourseSchema]
+    grades: List[GradeSchema]
+    notifications: List[NotificationSchema]
+
 @router.get("/dashboard", response_model=DashboardResponse)
-def get_student_dashboard(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+def get_dashboard(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(deps.get_db)
 ):
-    # Optional role check if User model includes a role field
-    # if getattr(current_user, "role", None) != "student":
-    #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access forbidden")
+    # Profile information (reuse User model fields)
+    profile_data = ProfileSchema.from_orm(current_user)
 
     # Enrolled courses
-    courses = (
-        db.query(Course)
-        .join(Enrollment, Enrollment.course_id == Course.id)
-        .filter(Enrollment.student_id == current_user.id)
+    enrollments = (
+        db.query(models.Course)
+        .join(models.Enrollment, models.Course.id == models.Enrollment.course_id)
+        .filter(models.Enrollment.student_id == current_user.id)
         .all()
     )
+    courses = [CourseSchema.from_orm(c) for c in enrollments]
 
-    # Grades linked via enrollment
-    grades = (
-        db.query(Grade)
-        .join(Enrollment, Enrollment.id == Grade.enrollment_id)
-        .filter(Enrollment.student_id == current_user.id)
+    # Grades for enrolled courses
+    grades_query = (
+        db.query(models.Grade)
+        .filter(models.Grade.student_id == current_user.id)
         .all()
     )
+    grades = [GradeSchema.from_orm(g) for g in grades_query]
 
-    # Student notifications
-    notifications = (
-        db.query(Notification)
-        .filter(Notification.user_id == current_user.id)
+    # Recent notifications (limit to latest 10)
+    notifications_query = (
+        db.query(models.Notification)
+        .filter(models.Notification.user_id == current_user.id)
+        .order_by(models.Notification.created_at.desc())
+        .limit(10)
         .all()
     )
+    notifications = [NotificationSchema.from_orm(n) for n in notifications_query]
 
     return DashboardResponse(
-        id=current_user.id,
-        email=current_user.email,
-        full_name=getattr(current_user, "full_name", ""),
+        profile=profile_data,
         courses=courses,
         grades=grades,
         notifications=notifications,

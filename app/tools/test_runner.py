@@ -2,6 +2,8 @@ import asyncio
 import logging
 import re
 import sys
+import tempfile
+from weakref import WeakKeyDictionary
 from pathlib import Path
 
 from app.models.task import RunEvidence
@@ -9,6 +11,14 @@ from app.models.task import RunEvidence
 logger = logging.getLogger(__name__)
 
 MAX_OUTPUT_CHARS = 8000
+_backend_test_locks: WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock] = WeakKeyDictionary()
+
+
+def _backend_test_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    if loop not in _backend_test_locks:
+        _backend_test_locks[loop] = asyncio.Lock()
+    return _backend_test_locks[loop]
 
 
 def truncate_test_output(text: str) -> str:
@@ -35,31 +45,50 @@ class BackendTestRunner:
             "TEST RUNNER: running %s",
             "task tests" if test_paths else "complete backend test suite",
         )
-        command = (str(executable), "-m", "pytest", *targets, "-q")
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *command,
-                cwd=self.workspace_root,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env={
-                    "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
-                    "PYTHONNOUSERSITE": "1",
-                    "PYTHONPATH": str(self.workspace_root),
-                },
-            )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(), timeout=self.timeout
-            )
-            exit_code = process.returncode or 0
-        except TimeoutError:
-            process.kill()
-            await process.communicate()
-            return RunEvidence(
-                passed=False,
-                exit_code=124,
-                summary=f"Tests timed out after {self.timeout:g} seconds",
-            )
+        command = (
+            str(executable), "-m", "pytest",
+            *(str(self.workspace_root / target) for target in targets), "-q",
+        )
+        async with _backend_test_lock():
+            with tempfile.TemporaryDirectory(prefix="backend-pytest-") as run_directory:
+                run_root = Path(run_directory)
+                try:
+                    process = await asyncio.create_subprocess_exec(
+                        *command,
+                        cwd=run_root,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        env={
+                            "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                            "PYTHONNOUSERSITE": "1",
+                            "PYTHONPATH": str(self.workspace_root),
+                            "DATABASE_URL": f"sqlite:///{run_root / 'test.db'}",
+                        },
+                    )
+                    communication = asyncio.create_task(process.communicate())
+                    stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                        asyncio.shield(communication), timeout=self.timeout
+                    )
+                    exit_code = process.returncode or 0
+                except TimeoutError:
+                    if process.returncode is None:
+                        try:
+                            process.kill()
+                        except ProcessLookupError:
+                            pass
+                    try:
+                        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                            communication, timeout=5
+                        )
+                    except TimeoutError:
+                        stdout_bytes, stderr_bytes = b"", b""
+                    return RunEvidence(
+                        passed=False,
+                        exit_code=124,
+                        summary=f"Tests timed out after {self.timeout:g} seconds",
+                        stdout=truncate_test_output(stdout_bytes.decode(errors="replace")),
+                        stderr=truncate_test_output(stderr_bytes.decode(errors="replace")),
+                    )
 
         stdout = stdout_bytes.decode(errors="replace")
         stderr = stderr_bytes.decode(errors="replace")

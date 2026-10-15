@@ -6,6 +6,8 @@ class WriteFile(BaseModel):
 
     path: str
     content: str
+    allow_modify: bool = False
+    expected_sha256: str | None = None
 
 
 class WriteFilesRequest(BaseModel):
